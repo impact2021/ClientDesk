@@ -539,6 +539,8 @@ final class ClientDesk {
         // ClientDesk chat pages
         if ( false !== strpos( $hook, self::MENU_SLUG ) || false !== strpos( $hook, self::HISTORY_SLUG ) ) {
             wp_enqueue_style( 'cdc-ui', CDC_URL . 'assets/clientdesk.css', [], CDC_VERSION );
+            wp_enqueue_style( 'wp-color-picker' );
+            wp_enqueue_script( 'wp-color-picker' );
             wp_enqueue_media();
         }
         // Meta box + globals page — code editors
@@ -1254,7 +1256,7 @@ final class ClientDesk {
                         ?>
                     </select>
                     <span class="cd-font-inline-label">L:</span>
-                    <input type="color" id="cd-link-color" class="cd-color-input-inline" value="<?php echo esc_attr( $saved_link_color ); ?>" title="Link colour">
+                    <input type="text" id="cd-link-color" class="cd-color-input-inline" value="<?php echo esc_attr( $saved_link_color ); ?>" aria-label="Link color">
                     <button class="cd-font-save" id="cd-font-save">Save</button>
                     <span class="cd-font-saved" id="cd-font-saved" style="display:none;">✓</span>
                 </div>
@@ -2749,6 +2751,13 @@ final class ClientDesk {
             // ---------------------------------------------------------------
             var fontSave  = document.getElementById('cd-font-save');
             var fontSaved = document.getElementById('cd-font-saved');
+
+            if (window.jQuery && window.jQuery.fn && window.jQuery.fn.wpColorPicker) {
+                var $linkColor = window.jQuery('#cd-link-color');
+                if ($linkColor.length) {
+                    $linkColor.wpColorPicker({ palettes: true });
+                }
+            }
 
             function saveFonts() {
                 var heading = document.getElementById('cd-font-heading').value;
