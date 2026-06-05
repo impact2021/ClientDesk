@@ -138,13 +138,32 @@ function cdc_apply_patches( string $html, array $patches ): array {
 // Apply insert action — insert new HTML after/before an anchor string
 function cdc_apply_insert( string $html, string $position, string $anchor, string $new_html ): array {
     if ( '' === $anchor ) return [ 'html' => $html, 'error' => 'No anchor provided for insert.' ];
-    if ( ! str_contains( $html, $anchor ) ) return [ 'html' => $html, 'error' => 'Could not find the anchor point. The page may have changed — please try again.' ];
-    if ( $position === 'before' ) {
-        $html = str_replace( $anchor, $new_html . $anchor, $html );
-    } else {
-        $html = str_replace( $anchor, $anchor . $new_html, $html );
+
+    // Try exact match first
+    if ( str_contains( $html, $anchor ) ) {
+        if ( $position === 'before' ) {
+            $html = str_replace( $anchor, $new_html . $anchor, $html );
+        } else {
+            $html = str_replace( $anchor, $anchor . $new_html, $html );
+        }
+        return [ 'html' => $html, 'error' => null ];
     }
-    return [ 'html' => $html, 'error' => null ];
+
+    // Whitespace-flexible fallback: normalize whitespace and try regex match
+    $anchor_norm = preg_replace( '/\s+/', ' ', trim( $anchor ) );
+    $pattern     = preg_replace( '/ /', '\\s+', preg_quote( $anchor_norm, '/' ) );
+    if ( preg_match( '/' . $pattern . '/s', $html, $matches, PREG_OFFSET_CAPTURE ) ) {
+        $matched = $matches[0][0];
+        $offset  = $matches[0][1];
+        if ( $position === 'before' ) {
+            $html = substr_replace( $html, $new_html . $matched, $offset, strlen( $matched ) );
+        } else {
+            $html = substr_replace( $html, $matched . $new_html, $offset, strlen( $matched ) );
+        }
+        return [ 'html' => $html, 'error' => null ];
+    }
+
+    return [ 'html' => $html, 'error' => 'I could not find the exact place to add that section. Where would you like it: at the top, at the bottom, or after a specific heading?' ];
 }
 
 $page_html = cdc_stream_get_content( $page_id, $field );

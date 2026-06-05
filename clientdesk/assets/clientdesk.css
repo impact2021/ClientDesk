@@ -1688,13 +1688,38 @@
 .cd-font-select-inline:focus { outline: none; border-color: #FF6600; }
 
 .cd-color-input-inline {
-    width: 24px;
-    height: 24px;
-    padding: 1px;
+    width: 84px;
+    height: 28px;
     border: 1px solid #e0e0e0;
     border-radius: 5px;
+    padding: 0 6px;
+    font-size: 11px;
     background: #fff;
-    cursor: pointer;
+    color: #1a1a1a;
+}
+
+.cd-font-inline .wp-picker-container {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.cd-font-inline .wp-picker-input-wrap .button {
+    height: 28px;
+    line-height: 26px;
+    min-height: 28px;
+    font-size: 11px;
+}
+
+.cd-font-inline .wp-color-result.button {
+    height: 28px;
+    min-height: 28px;
+    margin: 0;
+}
+
+.cd-font-inline .wp-color-result-text {
+    line-height: 26px;
+    font-size: 11px;
 }
 
 .cd-font-save {
@@ -1777,8 +1802,18 @@
     }
 
     .cd-color-input-inline {
-        width: 22px;
-        height: 22px;
+        width: 72px;
+        height: 26px;
+    }
+
+    .cd-font-inline .wp-picker-input-wrap .button,
+    .cd-font-inline .wp-color-result.button {
+        height: 26px;
+        min-height: 26px;
+    }
+
+    .cd-font-inline .wp-color-result-text {
+        line-height: 24px;
     }
 
     .cd-wizard-inner {
