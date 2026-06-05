@@ -3124,12 +3124,16 @@ function iw_render_header(): void {
     echo do_shortcode( '' !== trim( $per_page ) ? $per_page : get_option( CDC_GLOBAL_HEADER, '' ) ); // phpcs:ignore
 }
 function iw_render_body(): void {
-    if ( function_exists( 'is_woocommerce' ) && ( is_cart() || is_checkout() ) ) {
-        while ( have_posts() ) : the_post();
-            the_content();
-        endwhile;
-    } elseif ( function_exists( 'is_woocommerce' ) && is_woocommerce() ) {
-        woocommerce_content();
+    if ( function_exists( 'is_woocommerce' ) && ( is_cart() || is_checkout() || is_woocommerce() ) ) {
+        echo '<main id="iw-woocommerce">';
+        if ( is_cart() || is_checkout() ) {
+            while ( have_posts() ) : the_post();
+                the_content();
+            endwhile;
+        } else {
+            woocommerce_content();
+        }
+        echo '</main>';
     } elseif ( is_singular( 'page' ) ) {
         echo do_shortcode( (string) get_post_meta( get_the_ID(), CDC_FIELD_BODY, true ) ); // phpcs:ignore
     }
