@@ -1,0 +1,129 @@
+/* Impact Websites Core — Meta Box Styles */
+
+.cdc-metabox,
+.cdc-globals-wrap {
+    margin: 0 -12px;
+}
+
+.cdc-tabs,
+.cdc-globals-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid #e0e0e0;
+    padding: 0 12px;
+    margin-bottom: 0;
+}
+
+.cdc-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #888;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.cdc-tab:hover { color: #FF6600; }
+
+.cdc-tab--active {
+    color: #FF6600;
+    border-bottom-color: #FF6600;
+}
+
+.cdc-panel {
+    display: none;
+    padding: 14px 12px 8px;
+}
+
+.cdc-panel--active {
+    display: block;
+}
+
+.cdc-panel-desc {
+    font-size: 12px;
+    color: #888;
+    margin: 0 0 10px;
+}
+
+.cdc-panel-desc a { color: #FF6600; }
+
+.cdc-code-editor {
+    width: 100%;
+    height: 500px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.cdc-global-editor {
+    height: 600px;
+}
+
+/* CodeMirror overrides */
+.cdc-panel .CodeMirror {
+    height: 500px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.cdc-globals-wrap .CodeMirror {
+    height: 600px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+/* SEO fields */
+.cdc-seo-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    max-width: 700px;
+}
+
+.cdc-seo-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.cdc-seo-row label {
+    font-size: 12px;
+    font-weight: 700;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.cdc-seo-row input[type="text"],
+.cdc-seo-row textarea {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    width: 100%;
+    box-sizing: border-box;
+    transition: border-color 0.15s;
+}
+
+.cdc-seo-row input[type="text"]:focus,
+.cdc-seo-row textarea:focus {
+    outline: none;
+    border-color: #FF6600;
+}
+
+.cdc-char-count {
+    font-size: 11px;
+    color: #aaa;
+    text-align: right;
+}
+
+.cdc-char-count.cdc-over { color: #e05a00; font-weight: 700; }
