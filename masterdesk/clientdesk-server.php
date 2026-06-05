@@ -2,14 +2,15 @@
 /**
  * Plugin Name: MasterDesk
  * Description: MasterDesk — Impact Websites central hub. Manages ClientDesk licences, usage tracking, and AI for all client sites.
- * Version: 2.4.1
+ * Version: 2.4.2
+ * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
  */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDS_VERSION',   '2.4.1' );
+define( 'CDS_VERSION',   '2.4.2' );
 define( 'CDS_TOKEN_TABLE', 'clientdesk_tokens' );
 define( 'CDS_TABLE',     'clientdesk_sites' );
 define( 'CDS_LOG_TABLE', 'clientdesk_usage' );
