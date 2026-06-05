@@ -2,14 +2,14 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.1
+ * Version: 2.9.2
  * Author: impact2021
  * License: GPL-2.0-or-later
  */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDC_VERSION', '2.9.1' );
+define( 'CDC_VERSION', '2.9.2' );
 define( 'CDC_URL',     plugin_dir_url( __FILE__ ) );
 define( 'CDC_PATH',    plugin_dir_path( __FILE__ ) );
 
@@ -38,6 +38,7 @@ final class ClientDesk {
     const OPT_DOMAIN       = 'cdc_domain';
     const OPT_FONT_HEADING = 'cdc_font_heading';
     const OPT_FONT_BODY    = 'cdc_font_body';
+    const OPT_LINK_COLOR   = 'cdc_link_color';
     const OPT_DEBUG        = 'cdc_debug_mode';
     const LOG_FILE         = 'cdc-debug.log';
 
@@ -114,6 +115,7 @@ final class ClientDesk {
         // Google Fonts injection — builds URL from heading + body font settings
         $font_heading = trim( (string) get_option( self::OPT_FONT_HEADING, '' ) );
         $font_body    = trim( (string) get_option( self::OPT_FONT_BODY, '' ) );
+        $link_color   = sanitize_hex_color( trim( (string) get_option( self::OPT_LINK_COLOR, '' ) ) ) ?: '';
 
         if ( $font_heading || $font_body ) {
             $families = [];
@@ -126,7 +128,9 @@ final class ClientDesk {
             echo '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' . "\n"; // phpcs:ignore
             echo '<link rel="stylesheet" href="' . esc_url( $font_url ) . '">' . "\n"; // phpcs:ignore
 
-            // Apply fonts via CSS — loading the font is not enough; it must be assigned.
+        }
+
+        if ( $font_heading || $font_body || $link_color ) {
             echo '<style id="cdc-font-apply">' . "\n"; // phpcs:ignore
             if ( $font_body ) {
                 $fb_css = esc_attr( $font_heading === $font_body ? $font_heading : $font_body );
@@ -135,6 +139,9 @@ final class ClientDesk {
             if ( $font_heading ) {
                 $fh_css = esc_attr( $font_heading );
                 echo 'h1, h2, h3, h4, h5, h6 { font-family: \'' . $fh_css . '\', sans-serif !important; }' . "\n"; // phpcs:ignore
+            }
+            if ( $link_color ) {
+                echo 'a, a:visited { color: ' . esc_attr( $link_color ) . ' !important; }' . "\n"; // phpcs:ignore
             }
             echo '</style>' . "\n"; // phpcs:ignore
         }
@@ -1151,6 +1158,7 @@ final class ClientDesk {
                         <?php
                         $saved_heading = trim( (string) get_option( self::OPT_FONT_HEADING, '' ) );
                         $google_fonts = self::google_fonts_list();
+                        $saved_link_color = sanitize_hex_color( (string) get_option( self::OPT_LINK_COLOR, '' ) ) ?: '#0000ee';
                         echo '<option value=""'  . selected( '', $saved_heading, false ) . '>— Heading font —</option>';
                         foreach ( $google_fonts as $font ) {
                             echo '<option value="' . esc_attr( $font ) . '"' . selected( $font, $saved_heading, false ) . '>' . esc_html( $font ) . '</option>';
@@ -1167,6 +1175,8 @@ final class ClientDesk {
                         }
                         ?>
                     </select>
+                    <span class="cd-font-inline-label">L:</span>
+                    <input type="color" id="cd-link-color" class="cd-color-input-inline" value="<?php echo esc_attr( $saved_link_color ); ?>" title="Link colour">
                     <button class="cd-font-save" id="cd-font-save">Save</button>
                     <span class="cd-font-saved" id="cd-font-saved" style="display:none;">✓</span>
                 </div>
@@ -2663,12 +2673,15 @@ final class ClientDesk {
             function saveFonts() {
                 var heading = document.getElementById('cd-font-heading').value;
                 var body    = document.getElementById('cd-font-body').value;
+                var linkColorEl = document.getElementById('cd-link-color');
+                var linkColor = linkColorEl ? linkColorEl.value : '';
                 fontSave.disabled = true;
                 var d = new FormData();
                 d.append('action',       'cdc_save_fonts');
                 d.append('nonce',        nonce);
                 d.append('font_heading', heading);
                 d.append('font_body',    body);
+                d.append('link_color',   linkColor);
                 fetch(ajaxUrl, { method: 'POST', body: d })
                     .then(function(r) { return r.json(); })
                     .then(function(res) {
@@ -2916,7 +2929,7 @@ final class ClientDesk {
     // ---------------------------------------------------------------
 
     public static function google_fonts_list(): array {
-        return [
+        $fonts = [
             // Sans-serif
             'Inter', 'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Poppins', 'Nunito',
             'Raleway', 'Ubuntu', 'Noto Sans', 'Source Sans 3', 'PT Sans', 'Oxygen',
@@ -2933,6 +2946,8 @@ final class ClientDesk {
             // Monospace
             'JetBrains Mono', 'Fira Code', 'Source Code Pro',
         ];
+        natcasesort( $fonts );
+        return array_values( $fonts );
     }
 
     // ---------------------------------------------------------------
@@ -2945,11 +2960,13 @@ final class ClientDesk {
 
         $heading = sanitize_text_field( wp_unslash( $_POST['font_heading'] ?? '' ) );
         $body    = sanitize_text_field( wp_unslash( $_POST['font_body']    ?? '' ) );
+        $link_color = sanitize_hex_color( wp_unslash( $_POST['link_color'] ?? '' ) ) ?: '';
 
         update_option( self::OPT_FONT_HEADING, $heading );
         update_option( self::OPT_FONT_BODY,    $body );
+        update_option( self::OPT_LINK_COLOR,   $link_color );
 
-        wp_send_json_success( [ 'font_heading' => $heading, 'font_body' => $body ] );
+        wp_send_json_success( [ 'font_heading' => $heading, 'font_body' => $body, 'link_color' => $link_color ] );
     }
 
     private function cap(): string {
