@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.10
+ * Version: 2.9.11
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -18,7 +18,7 @@ $clientdesk_update_checker = YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::bu
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDC_VERSION', '2.9.10' );
+define( 'CDC_VERSION', '2.9.11' );
 define( 'CDC_URL',     plugin_dir_url( __FILE__ ) );
 define( 'CDC_PATH',    plugin_dir_path( __FILE__ ) );
 
