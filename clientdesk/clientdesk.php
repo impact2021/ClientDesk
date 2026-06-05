@@ -114,6 +114,14 @@ final class ClientDesk {
         }
     }
 
+    private function sanitize_brand_light( string $value ): string {
+        $value = (string) preg_replace( '/[^#a-fA-F0-9]/', '', $value );
+        if ( ! preg_match( '/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/', $value ) ) {
+            return '#003D5E18';
+        }
+        return $value;
+    }
+
     public function output_scripts(): void {
         // Google Fonts injection — builds URL from heading + body font settings
         $font_heading = trim( (string) get_option( self::OPT_FONT_HEADING, '' ) );
@@ -121,8 +129,7 @@ final class ClientDesk {
         $link_color   = sanitize_hex_color( trim( (string) get_option( self::OPT_LINK_COLOR, '' ) ) ) ?: '';
         $brand_primary = sanitize_hex_color( (string) get_option( CDC_BRAND_PRIMARY, '#003D5E' ) ) ?: '#003D5E';
         $brand_hover   = sanitize_hex_color( (string) get_option( CDC_BRAND_HOVER, '#00527e' ) ) ?: '#00527e';
-        $brand_light   = preg_replace( '/[^#a-fA-F0-9]/', '', (string) get_option( CDC_BRAND_LIGHT, '#003D5E18' ) );
-        if ( '' === $brand_light ) $brand_light = '#003D5E18';
+        $brand_light   = $this->sanitize_brand_light( (string) get_option( CDC_BRAND_LIGHT, '#003D5E18' ) );
 
         if ( $font_heading || $font_body ) {
             $families = [];
@@ -559,8 +566,7 @@ final class ClientDesk {
         $global_woo_css = (string) get_option( CDC_GLOBAL_WOO_CSS, '' );
         $brand_primary  = sanitize_hex_color( (string) get_option( CDC_BRAND_PRIMARY, '#003D5E' ) ) ?: '#003D5E';
         $brand_hover    = sanitize_hex_color( (string) get_option( CDC_BRAND_HOVER, '#00527e' ) ) ?: '#00527e';
-        $brand_light    = preg_replace( '/[^#a-fA-F0-9]/', '', (string) get_option( CDC_BRAND_LIGHT, '#003D5E18' ) );
-        if ( '' === $brand_light ) $brand_light = '#003D5E18';
+        $brand_light    = $this->sanitize_brand_light( (string) get_option( CDC_BRAND_LIGHT, '#003D5E18' ) );
         if ( isset( $_GET['saved'] ) ) {
             echo '<div class="notice notice-success is-dismissible"><p>Global content saved.</p></div>';
         }
@@ -630,7 +636,7 @@ final class ClientDesk {
         update_option( CDC_GLOBAL_WOO_CSS, wp_unslash( $_POST['cdc_global_woo_css'] ?? '' ) );
         update_option( CDC_BRAND_PRIMARY, sanitize_hex_color( wp_unslash( $_POST['cdc_brand_primary'] ?? '#003D5E' ) ) );
         update_option( CDC_BRAND_HOVER, sanitize_hex_color( wp_unslash( $_POST['cdc_brand_hover'] ?? '#00527e' ) ) );
-        update_option( CDC_BRAND_LIGHT, preg_replace( '/[^#a-fA-F0-9]/', '', wp_unslash( $_POST['cdc_brand_light'] ?? '#003D5E18' ) ) );
+        update_option( CDC_BRAND_LIGHT, $this->sanitize_brand_light( (string) wp_unslash( $_POST['cdc_brand_light'] ?? '#003D5E18' ) ) );
         wp_redirect( admin_url( 'admin.php?page=' . self::GLOBALS_SLUG . '&saved=1' ) );
         exit;
     }
