@@ -61,6 +61,7 @@ $page_id = isset( $_POST['page_id'] ) ? (int) $_POST['page_id'] : 0;
 $field   = isset( $_POST['field'] )   ? sanitize_key( wp_unslash( $_POST['field'] ) ) : 'body';
 $message = isset( $_POST['message'] ) ? sanitize_textarea_field( wp_unslash( $_POST['message'] ) ) : '';
 $history = isset( $_POST['history'] ) ? json_decode( wp_unslash( $_POST['history'] ), true ) : [];
+$local_api_key = isset( $_POST['local_api_key'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['local_api_key'] ) ) ) : '';
 
 if ( ! $page_id || ! $message ) {
     header( 'Content-Type: text/event-stream' );
@@ -184,49 +185,64 @@ $font_body    = trim( (string) get_option( 'cdc_font_body', '' ) );
 
 if ( ! $domain ) $domain = parse_url( home_url(), PHP_URL_HOST ) ?: '';
 
-if ( ! $licence_key || ! $endpoint ) {
+if ( ! $local_api_key && ( ! $licence_key || ! $endpoint ) ) {
     header( 'Content-Type: text/event-stream' );
     header( 'Cache-Control: no-cache' );
     echo "event: error\ndata: {\"message\":\"ClientDesk is not configured.\"}\n\n";
     exit;
 }
 
-// Step 1: Get token from MasterDesk
-$token_endpoint = preg_replace( '/\/chat$/', '/token', $endpoint );
-cdc_slog( 'Requesting token from: ' . $token_endpoint );
+if ( $local_api_key !== '' ) {
+    $session_token = '';
+    $api_key       = $local_api_key;
+    $model         = trim( (string) get_option( 'cds_model', 'claude-sonnet-4-6' ) );
+    $spent_fmt     = null;
+    $budget_fmt    = null;
+    $remaining_fmt = null;
+    $show_warning  = false;
+    $contact_phone = '';
+    $contact_email = '';
+} else {
+    // Step 1: Get token from MasterDesk
+    $token_endpoint = preg_replace( '/\/chat$/', '/token', $endpoint );
+    cdc_slog( 'Requesting token from: ' . $token_endpoint );
 
-$token_response = wp_remote_post( $token_endpoint, [
-    'headers' => [ 'Content-Type' => 'application/json' ],
-    'body'    => wp_json_encode( [ 'licence_key' => $licence_key, 'domain' => $domain ] ),
-    'timeout' => 15,
-] );
+    $token_response = wp_remote_post( $token_endpoint, [
+        'headers' => [ 'Content-Type' => 'application/json' ],
+        'body'    => wp_json_encode( [ 'licence_key' => $licence_key, 'domain' => $domain ] ),
+        'timeout' => 15,
+    ] );
 
-if ( is_wp_error( $token_response ) ) {
-    header( 'Content-Type: text/event-stream' );
-    header( 'Cache-Control: no-cache' );
-    echo 'event: error' . "\n";
-    echo 'data: ' . json_encode( [ 'message' => 'Could not reach ClientDesk server: ' . $token_response->get_error_message() ] ) . "\n\n";
-    exit;
+    if ( is_wp_error( $token_response ) ) {
+        header( 'Content-Type: text/event-stream' );
+        header( 'Cache-Control: no-cache' );
+        echo 'event: error' . "\n";
+        echo 'data: ' . json_encode( [ 'message' => 'Could not reach ClientDesk server: ' . $token_response->get_error_message() ] ) . "\n\n";
+        exit;
+    }
+
+    $token_body = json_decode( wp_remote_retrieve_body( $token_response ), true );
+    if ( ! is_array( $token_body ) || ! ( $token_body['success'] ?? false ) ) {
+        header( 'Content-Type: text/event-stream' );
+        header( 'Cache-Control: no-cache' );
+        echo 'event: error' . "\n";
+        echo 'data: ' . json_encode( [ 'message' => $token_body['error'] ?? 'Could not get access token.' ] ) . "\n\n";
+        exit;
+    }
+
+    $session_token = $token_body['token'];
+    $api_key       = $token_body['api_key'];
+    $model         = $token_body['model'];
+    $spent_fmt     = $token_body['spent_fmt'] ?? null;
+    $budget_fmt    = $token_body['budget_fmt'] ?? null;
+    $remaining_fmt = $token_body['remaining_fmt'] ?? null;
+    $show_warning  = $token_body['show_warning'] ?? false;
+    $contact_phone = $token_body['contact_phone'] ?? '';
+    $contact_email = $token_body['contact_email'] ?? '';
+
+    set_transient( 'cdc_latest_version', trim( (string) ( $token_body['clientdesk_version'] ?? '' ) ), 12 * HOUR_IN_SECONDS );
+    set_transient( 'cdc_download_url', trim( (string) ( $token_body['clientdesk_download_url'] ?? '' ) ), 12 * HOUR_IN_SECONDS );
 }
-
-$token_body = json_decode( wp_remote_retrieve_body( $token_response ), true );
-if ( ! is_array( $token_body ) || ! ( $token_body['success'] ?? false ) ) {
-    header( 'Content-Type: text/event-stream' );
-    header( 'Cache-Control: no-cache' );
-    echo 'event: error' . "\n";
-    echo 'data: ' . json_encode( [ 'message' => $token_body['error'] ?? 'Could not get access token.' ] ) . "\n\n";
-    exit;
-}
-
-$session_token = $token_body['token'];
-$api_key       = $token_body['api_key'];
-$model         = $token_body['model'];
-$spent_fmt     = $token_body['spent_fmt'] ?? null;
-$budget_fmt    = $token_body['budget_fmt'] ?? null;
-$remaining_fmt = $token_body['remaining_fmt'] ?? null;
-$show_warning  = $token_body['show_warning'] ?? false;
-$contact_phone = $token_body['contact_phone'] ?? '';
-$contact_email = $token_body['contact_email'] ?? '';
 
 cdc_slog( 'Token received — streaming directly to Anthropic' );
 
@@ -515,24 +531,26 @@ if ( $apply_result !== null && $apply_result !== '' ) {
 }
 
 // Step 5: Report usage to MasterDesk
-$report_endpoint = preg_replace( '/\/chat$/', '/report', $endpoint );
-$report_ch = curl_init( $report_endpoint );
-curl_setopt_array( $report_ch, [
-    CURLOPT_POST           => true,
-    CURLOPT_POSTFIELDS     => wp_json_encode( [
-        'token'         => $session_token,
-        'input_tokens'  => $input_tokens,
-        'output_tokens' => $output_tokens,
-        'action'        => $report_action,
-        'summary'       => $report_summary,
-    ] ),
-    CURLOPT_HTTPHEADER     => [ 'Content-Type: application/json' ],
-    CURLOPT_TIMEOUT        => 5,
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_NOSIGNAL       => true,
-] );
-curl_exec( $report_ch );
-curl_close( $report_ch );
+if ( $session_token !== '' && $endpoint !== '' ) {
+    $report_endpoint = preg_replace( '/\/chat$/', '/report', $endpoint );
+    $report_ch = curl_init( $report_endpoint );
+    curl_setopt_array( $report_ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => wp_json_encode( [
+            'token'         => $session_token,
+            'input_tokens'  => $input_tokens,
+            'output_tokens' => $output_tokens,
+            'action'        => $report_action,
+            'summary'       => $report_summary,
+        ] ),
+        CURLOPT_HTTPHEADER     => [ 'Content-Type: application/json' ],
+        CURLOPT_TIMEOUT        => 5,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_NOSIGNAL       => true,
+    ] );
+    curl_exec( $report_ch );
+    curl_close( $report_ch );
+}
 
 // Step 6: Send done event
 echo 'event: done' . "\n";

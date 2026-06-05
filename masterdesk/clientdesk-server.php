@@ -615,6 +615,8 @@ function cds_handle_token( WP_REST_Request $request ): WP_REST_Response {
         'show_warning'    => $remaining_cents > 0 && $remaining_cents <= $warn_cents,
         'contact_phone'   => (string) get_option( 'cds_contact_phone', '0210559077' ),
         'contact_email'   => (string) get_option( 'cds_contact_email', 'impact@impactwebsites.co.nz' ),
+        'clientdesk_version'      => trim( (string) get_option( 'cds_clientdesk_version', '' ) ),
+        'clientdesk_download_url' => trim( (string) get_option( 'cds_clientdesk_download_url', '' ) ),
     ], 200 );
 }
 
@@ -866,6 +868,8 @@ function cds_register_settings(): void {
         'cds_warn_threshold',
         'cds_contact_phone',
         'cds_contact_email',
+        'cds_clientdesk_version',
+        'cds_clientdesk_download_url',
     ] as $opt ) {
         register_setting( 'cds_settings', $opt, [
             'type'              => 'string',
@@ -917,6 +921,18 @@ function cds_render_panel(): void {
             <span class="cds-logo"><span class="cds-logo-icon">≡</span><strong>Master</strong>Desk</span>
             <span class="cds-header-total">Total cost this month: <strong><?php echo esc_html( cds_format_dollars( $total_cost_cents ) ); ?></strong></span>
             <a href="<?php echo esc_url( admin_url( 'admin.php?page=clientdesk-server-settings' ) ); ?>" class="cds-header-link">Settings</a>
+        </div>
+
+        <div class="cds-settings-section-label">ClientDesk updates</div>
+
+        <div class="cds-settings-row">
+            <label>Latest ClientDesk version</label>
+            <input type="text" name="cds_clientdesk_version" value="<?php echo esc_attr( $clientdesk_version ); ?>" />
+        </div>
+
+        <div class="cds-settings-row">
+            <label>ClientDesk download URL</label>
+            <input type="text" name="cds_clientdesk_download_url" value="<?php echo esc_attr( $clientdesk_download_url ); ?>" />
         </div>
 
         <div class="cds-panel">
@@ -1252,6 +1268,8 @@ function cds_render_settings(): void {
     $warn_threshold = (string) get_option( 'cds_warn_threshold', '2.00' );
     $contact_phone  = (string) get_option( 'cds_contact_phone', '0210559077' );
     $contact_email  = (string) get_option( 'cds_contact_email', 'impact@impactwebsites.co.nz' );
+    $clientdesk_version = (string) get_option( 'cds_clientdesk_version', '' );
+    $clientdesk_download_url = (string) get_option( 'cds_clientdesk_download_url', '' );
     $endpoint       = rest_url( 'clientdesk/v1/chat' );
     ?>
     <div class="cds-wrap cds-wrap--settings">
