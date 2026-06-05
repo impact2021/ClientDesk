@@ -611,7 +611,7 @@ final class ClientDesk {
                                 </tr>
                                 <tr>
                                     <th scope="row"><label for="cdc_brand_light">Light tint (supports alpha hex, e.g. #003D5E18)</label></th>
-                                    <td><input type="text" id="cdc_brand_light" name="cdc_brand_light" class="regular-text" value="<?php echo esc_attr( $brand_light ); ?>" /></td>
+                                    <td><input type="text" id="cdc_brand_light" name="cdc_brand_light" class="regular-text" placeholder="#003D5E18" pattern="^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$" value="<?php echo esc_attr( $brand_light ); ?>" /></td>
                                 </tr>
                             </tbody>
                         </table>
