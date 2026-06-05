@@ -2,14 +2,15 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.4
+ * Version: 2.9.5
+ * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
  */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDC_VERSION', '2.9.4' );
+define( 'CDC_VERSION', '2.9.5' );
 define( 'CDC_URL',     plugin_dir_url( __FILE__ ) );
 define( 'CDC_PATH',    plugin_dir_path( __FILE__ ) );
 
@@ -22,9 +23,6 @@ define( 'CDC_GLOBAL_HEADER',  'iw_global_header' );
 define( 'CDC_GLOBAL_FOOTER',  'iw_global_footer' );
 define( 'CDC_GLOBAL_SCRIPTS', 'iw_global_scripts' );
 define( 'CDC_GLOBAL_WOO_CSS', 'iw_global_woo_css' );
-define( 'CDC_BRAND_PRIMARY',  'iw_brand_primary' );
-define( 'CDC_BRAND_HOVER',    'iw_brand_hover' );
-define( 'CDC_BRAND_LIGHT',    'iw_brand_light' );
 define( 'CDC_META_TITLE', '_impact_websites_meta_title' );
 define( 'CDC_META_DESC',  '_impact_websites_meta_desc' );
 define( 'CDC_SCHEMA_KEY', 'cdc_schema_data' );
@@ -115,22 +113,11 @@ final class ClientDesk {
         }
     }
 
-    private function sanitize_brand_light( string $value ): string {
-        $value = (string) preg_replace( '/[^#a-fA-F0-9]/', '', $value );
-        if ( ! preg_match( '/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/', $value ) ) {
-            return '#003D5E18';
-        }
-        return $value;
-    }
-
     public function output_scripts(): void {
         // Google Fonts injection — builds URL from heading + body font settings
         $font_heading = trim( (string) get_option( self::OPT_FONT_HEADING, '' ) );
         $font_body    = trim( (string) get_option( self::OPT_FONT_BODY, '' ) );
         $link_color   = sanitize_hex_color( trim( (string) get_option( self::OPT_LINK_COLOR, '' ) ) ) ?: '';
-        $brand_primary = sanitize_hex_color( (string) get_option( CDC_BRAND_PRIMARY, '#003D5E' ) ) ?: '#003D5E';
-        $brand_hover   = sanitize_hex_color( (string) get_option( CDC_BRAND_HOVER, '#00527e' ) ) ?: '#00527e';
-        $brand_light   = $this->sanitize_brand_light( (string) get_option( CDC_BRAND_LIGHT, '#003D5E18' ) );
 
         if ( $font_heading || $font_body ) {
             $families = [];
@@ -145,9 +132,8 @@ final class ClientDesk {
 
         }
 
-        if ( $font_heading || $font_body || $link_color || $brand_primary || $brand_hover || $brand_light ) {
+        if ( $font_heading || $font_body || $link_color ) {
             echo '<style id="cdc-font-apply">' . "\n"; // phpcs:ignore
-            echo ':root { --iw-brand: ' . esc_attr( $brand_primary ) . '; --iw-brand-hover: ' . esc_attr( $brand_hover ) . '; --iw-brand-light: ' . esc_attr( $brand_light ) . '; }' . "\n"; // phpcs:ignore
             if ( $font_body ) {
                 $fb_css = esc_attr( $font_heading === $font_body ? $font_heading : $font_body );
                 echo 'body, p, li, td, input, select, textarea, button { font-family: \'' . $fb_css . '\', sans-serif !important; }' . "\n"; // phpcs:ignore
@@ -506,7 +492,7 @@ final class ClientDesk {
 
     public function register_menus(): void {
         $cap = $this->cap();
-        add_menu_page( 'ClientDesk', 'ClientDesk', $cap, self::MENU_SLUG, [ $this, 'render_chat' ], 'dashicons-edit-page', 59 );
+        add_menu_page( 'ClientDesk', 'ClientDesk', $cap, self::MENU_SLUG, [ $this, 'render_chat' ], 'dashicons-edit-page', 2 );
         add_submenu_page( self::MENU_SLUG, 'Make a Change',   'Make a Change',   $cap, self::MENU_SLUG,     [ $this, 'render_chat' ] );
         add_submenu_page( self::MENU_SLUG, 'Change History',  'Change History',  $cap, self::HISTORY_SLUG,  [ $this, 'render_history' ] );
         add_submenu_page( self::MENU_SLUG, 'Global Content',  'Global Content',  'manage_options', self::GLOBALS_SLUG, [ $this, 'render_globals' ] );
@@ -567,9 +553,6 @@ final class ClientDesk {
         $global_footer  = (string) get_option( CDC_GLOBAL_FOOTER,  '' );
         $global_scripts = (string) get_option( CDC_GLOBAL_SCRIPTS, '' );
         $global_woo_css = (string) get_option( CDC_GLOBAL_WOO_CSS, '' );
-        $brand_primary  = sanitize_hex_color( (string) get_option( CDC_BRAND_PRIMARY, '#003D5E' ) ) ?: '#003D5E';
-        $brand_hover    = sanitize_hex_color( (string) get_option( CDC_BRAND_HOVER, '#00527e' ) ) ?: '#00527e';
-        $brand_light    = $this->sanitize_brand_light( (string) get_option( CDC_BRAND_LIGHT, '#003D5E18' ) );
         if ( isset( $_GET['saved'] ) ) {
             echo '<div class="notice notice-success is-dismissible"><p>Global content saved.</p></div>';
         }
@@ -585,7 +568,6 @@ final class ClientDesk {
                         <button type="button" class="cdc-tab cdc-tab--active" data-target="cdc-g-header">Site Header</button>
                         <button type="button" class="cdc-tab" data-target="cdc-g-footer">Site Footer</button>
                         <button type="button" class="cdc-tab" data-target="cdc-g-scripts">Scripts / Tracking</button>
-                        <button type="button" class="cdc-tab" data-target="cdc-g-brand-colours">Brand Colours</button>
                         <button type="button" class="cdc-tab" data-target="cdc-g-woo-css">WooCommerce CSS</button>
                     </div>
                     <div id="cdc-g-header" class="cdc-panel cdc-panel--active">
@@ -599,25 +581,6 @@ final class ClientDesk {
                     <div id="cdc-g-scripts" class="cdc-panel">
                         <p class="cdc-panel-desc">Paste analytics, tracking pixels, or any other <code>&lt;head&gt;</code> code here. Renders on every page.</p>
                         <textarea name="cdc_global_scripts" class="cdc-code-editor cdc-global-editor"><?php echo esc_textarea( $global_scripts ); ?></textarea>
-                    </div>
-                    <div id="cdc-g-brand-colours" class="cdc-panel">
-                        <p class="cdc-panel-desc">Sets CSS variables used site-wide. Any CSS using <code>var(--iw-brand)</code>, <code>var(--iw-brand-hover)</code>, or <code>var(--iw-brand-light)</code> will update automatically.</p>
-                        <table class="form-table" role="presentation">
-                            <tbody>
-                                <tr>
-                                    <th scope="row"><label for="cdc_brand_primary">Primary brand colour</label></th>
-                                    <td><input type="color" id="cdc_brand_primary" name="cdc_brand_primary" value="<?php echo esc_attr( $brand_primary ); ?>" /></td>
-                                </tr>
-                                <tr>
-                                    <th scope="row"><label for="cdc_brand_hover">Hover colour</label></th>
-                                    <td><input type="color" id="cdc_brand_hover" name="cdc_brand_hover" value="<?php echo esc_attr( $brand_hover ); ?>" /></td>
-                                </tr>
-                                <tr>
-                                    <th scope="row"><label for="cdc_brand_light">Light tint (supports alpha hex, e.g. #003D5E18)</label></th>
-                                    <td><input type="text" id="cdc_brand_light" name="cdc_brand_light" class="regular-text" placeholder="#003D5E18" pattern="^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$" value="<?php echo esc_attr( $brand_light ); ?>" /></td>
-                                </tr>
-                            </tbody>
-                        </table>
                     </div>
                     <div id="cdc-g-woo-css" class="cdc-panel">
                         <p class="cdc-panel-desc">CSS injected on WooCommerce pages only (shop, product, cart, checkout). Does not load on any other page.</p>
@@ -637,9 +600,6 @@ final class ClientDesk {
         update_option( CDC_GLOBAL_FOOTER,  wp_unslash( $_POST['cdc_global_footer']  ?? '' ) );
         update_option( CDC_GLOBAL_SCRIPTS, wp_unslash( $_POST['cdc_global_scripts'] ?? '' ) );
         update_option( CDC_GLOBAL_WOO_CSS, wp_unslash( $_POST['cdc_global_woo_css'] ?? '' ) );
-        update_option( CDC_BRAND_PRIMARY, sanitize_hex_color( wp_unslash( $_POST['cdc_brand_primary'] ?? '#003D5E' ) ) );
-        update_option( CDC_BRAND_HOVER, sanitize_hex_color( wp_unslash( $_POST['cdc_brand_hover'] ?? '#00527e' ) ) );
-        update_option( CDC_BRAND_LIGHT, $this->sanitize_brand_light( (string) wp_unslash( $_POST['cdc_brand_light'] ?? '#003D5E18' ) ) );
         wp_redirect( admin_url( 'admin.php?page=' . self::GLOBALS_SLUG . '&saved=1' ) );
         exit;
     }
