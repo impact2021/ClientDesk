@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.9
+ * Version: 2.9.10
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -18,7 +18,7 @@ $clientdesk_update_checker = YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::bu
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDC_VERSION', '2.9.9' );
+define( 'CDC_VERSION', '2.9.10' );
 define( 'CDC_URL',     plugin_dir_url( __FILE__ ) );
 define( 'CDC_PATH',    plugin_dir_path( __FILE__ ) );
 
@@ -1456,21 +1456,21 @@ final class ClientDesk {
                                         <tr>
                                             <td><label for="cd-colour-primary">Primary colour</label></td>
                                             <td>
-                                                <input type="color" id="cd-colour-primary" class="cd-colour-swatch" data-hex="cd-colour-primary-hex" value="<?php echo esc_attr( $c_primary ); ?>" style="width:40px;height:40px;padding:0;border:1px solid #ccc;border-radius:6px;cursor:pointer;appearance:none;-webkit-appearance:none;">
+                                                <input type="color" id="cd-colour-primary" class="cd-colour-swatch" data-hex="cd-colour-primary-hex" value="<?php echo esc_attr( $c_primary ); ?>" style="width:40px!important;height:40px!important;padding:0!important;border:1px solid #ccc!important;border-radius:6px!important;cursor:pointer!important;appearance:none!important;-webkit-appearance:none!important;background:none!important;min-height:0!important;">
                                                 <input type="text" id="cd-colour-primary-hex" class="cd-colour-hex" value="<?php echo esc_attr( $c_primary ); ?>" maxlength="7" style="width:90px;margin-left:8px;vertical-align:middle;">
                                             </td>
                                         </tr>
                                         <tr>
                                             <td><label for="cd-colour-secondary">Secondary colour</label></td>
                                             <td>
-                                                <input type="color" id="cd-colour-secondary" class="cd-colour-swatch" data-hex="cd-colour-secondary-hex" value="<?php echo esc_attr( $c_secondary ); ?>" style="width:40px;height:40px;padding:0;border:1px solid #ccc;border-radius:6px;cursor:pointer;appearance:none;-webkit-appearance:none;">
+                                                <input type="color" id="cd-colour-secondary" class="cd-colour-swatch" data-hex="cd-colour-secondary-hex" value="<?php echo esc_attr( $c_secondary ); ?>" style="width:40px!important;height:40px!important;padding:0!important;border:1px solid #ccc!important;border-radius:6px!important;cursor:pointer!important;appearance:none!important;-webkit-appearance:none!important;background:none!important;min-height:0!important;">
                                                 <input type="text" id="cd-colour-secondary-hex" class="cd-colour-hex" value="<?php echo esc_attr( $c_secondary ); ?>" maxlength="7" style="width:90px;margin-left:8px;vertical-align:middle;">
                                             </td>
                                         </tr>
                                         <tr>
                                             <td><label for="cd-colour-link">Link colour</label></td>
                                             <td>
-                                                <input type="color" id="cd-colour-link" class="cd-colour-swatch" data-hex="cd-colour-link-hex" value="<?php echo esc_attr( $c_link_swatch ); ?>" style="width:40px;height:40px;padding:0;border:1px solid #ccc;border-radius:6px;cursor:pointer;appearance:none;-webkit-appearance:none;">
+                                                <input type="color" id="cd-colour-link" class="cd-colour-swatch" data-hex="cd-colour-link-hex" value="<?php echo esc_attr( $c_link_swatch ); ?>" style="width:40px!important;height:40px!important;padding:0!important;border:1px solid #ccc!important;border-radius:6px!important;cursor:pointer!important;appearance:none!important;-webkit-appearance:none!important;background:none!important;min-height:0!important;">
                                                 <input type="text" id="cd-colour-link-hex" class="cd-colour-hex" value="<?php echo esc_attr( $c_link ); ?>" maxlength="7" style="width:90px;margin-left:8px;vertical-align:middle;">
                                             </td>
                                         </tr>
