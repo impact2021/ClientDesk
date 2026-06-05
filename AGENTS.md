@@ -78,7 +78,25 @@ When any of the three items above has been updated, zip the relevant folder:
 | MasterDesk | `masterdesk/` | `masterdesk-vX_Y_Z.zip` |
 | Theme | `impact-websites-theme/` | `impact-websites-theme.zip` |
 
-The zip must contain the folder itself (e.g. unzipping `clientdesk-v2_8_0.zip` produces a `clientdesk/` folder), which is the standard WordPress plugin/theme upload format.
+The zip must contain the folder itself (e.g. unzipping `clientdesk-v2_9_0.zip` produces a `clientdesk/` folder), which is the standard WordPress plugin/theme upload format.
+
+### Version numbers — update on every change
+
+Every time any file in a plugin or theme is changed, **all version numbers for that item must be bumped** before zipping:
+
+**ClientDesk plugin** — bump both of these in `clientdesk/clientdesk.php`:
+- `* Version:` in the plugin header comment (line ~5)
+- `define( 'CDC_VERSION', '...' );` (line ~12)
+- Rename the zip to match: `clientdesk-vX_Y_Z.zip` and delete the old zip from the repo.
+
+**MasterDesk plugin** — bump both of these in `masterdesk/clientdesk-server.php`:
+- `* Version:` in the plugin header comment
+- `define( 'CDS_VERSION', '...' );`
+- Rename the zip to match: `masterdesk-vX_Y_Z.zip` and delete the old zip from the repo.
+
+**Theme** — bump `Version:` in `impact-websites-theme/style.css`. The zip filename stays `impact-websites-theme.zip` (no version in the name).
+
+Use semantic versioning: increment the **patch** digit (X.Y.**Z**) for bug fixes and small additions, the **minor** digit (X.**Y**.0) for new features.
 
 ---
 
