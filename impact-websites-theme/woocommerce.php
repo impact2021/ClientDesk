@@ -18,7 +18,15 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 <?php wp_body_open(); ?>
 <?php iw_render_header(); ?>
 <main id="iw-woocommerce">
-    <?php woocommerce_content(); ?>
+    <?php
+    if ( is_cart() || is_checkout() ) {
+        while ( have_posts() ) : the_post();
+            the_content();
+        endwhile;
+    } else {
+        woocommerce_content();
+    }
+    ?>
 </main>
 <?php iw_render_footer(); ?>
 <?php wp_footer(); ?>

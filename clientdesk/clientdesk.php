@@ -2,14 +2,14 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.2
+ * Version: 2.9.3
  * Author: impact2021
  * License: GPL-2.0-or-later
  */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDC_VERSION', '2.9.2' );
+define( 'CDC_VERSION', '2.9.3' );
 define( 'CDC_URL',     plugin_dir_url( __FILE__ ) );
 define( 'CDC_PATH',    plugin_dir_path( __FILE__ ) );
 
@@ -2983,7 +2983,11 @@ function iw_render_header(): void {
     echo do_shortcode( '' !== trim( $per_page ) ? $per_page : get_option( CDC_GLOBAL_HEADER, '' ) ); // phpcs:ignore
 }
 function iw_render_body(): void {
-    if ( function_exists( 'is_woocommerce' ) && ( is_woocommerce() || is_cart() || is_checkout() ) ) {
+    if ( function_exists( 'is_woocommerce' ) && ( is_cart() || is_checkout() ) ) {
+        while ( have_posts() ) : the_post();
+            the_content();
+        endwhile;
+    } elseif ( function_exists( 'is_woocommerce' ) && is_woocommerce() ) {
         woocommerce_content();
     } elseif ( is_singular( 'page' ) ) {
         echo do_shortcode( (string) get_post_meta( get_the_ID(), CDC_FIELD_BODY, true ) ); // phpcs:ignore
