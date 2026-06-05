@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.11
+ * Version: 2.9.12
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -18,7 +18,7 @@ $clientdesk_update_checker = YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::bu
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDC_VERSION', '2.9.11' );
+define( 'CDC_VERSION', '2.9.12' );
 define( 'CDC_URL',     plugin_dir_url( __FILE__ ) );
 define( 'CDC_PATH',    plugin_dir_path( __FILE__ ) );
 
@@ -84,6 +84,7 @@ final class ClientDesk {
         add_action( 'init',                  [ $this, 'register_cpt' ] );
         add_action( 'admin_menu',            [ $this, 'register_menus' ] );
         add_action( 'admin_init',            [ $this, 'register_settings' ] );
+        add_action( 'admin_notices',         [ $this, 'maybe_show_update_notice' ] );
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ] );
         // Meta box
         add_action( 'add_meta_boxes',        [ $this, 'register_meta_box' ] );
@@ -1005,6 +1006,16 @@ final class ClientDesk {
     public function ajax_get_usage(): void {
         check_ajax_referer( 'cdc_nonce', 'nonce' );
         if ( ! current_user_can( $this->cap() ) ) wp_send_json_error( [ 'message' => 'Permission denied.' ] );
+        if ( $this->is_local_mode() ) {
+            wp_send_json_success( [
+                'spent_fmt'     => '',
+                'budget_fmt'    => '',
+                'remaining_fmt' => '',
+                'show_warning'  => false,
+                'contact_phone' => '',
+                'contact_email' => '',
+            ] );
+        }
         [ $licence_key, $endpoint, $domain ] = $this->config();
         if ( ! $licence_key || ! $endpoint ) wp_send_json_error( [ 'message' => 'Not configured.' ] );
         $usage_endpoint = preg_replace( '/\/chat$/', '/usage', $endpoint );
@@ -1200,6 +1211,27 @@ final class ClientDesk {
         return [ $key, $endpoint, $domain ];
     }
 
+    private function is_local_mode(): bool {
+        return get_option( 'cds_anthropic_api_key', '' ) !== '';
+    }
+
+    private function local_api_key(): string {
+        return trim( (string) get_option( 'cds_anthropic_api_key', '' ) );
+    }
+
+    public function maybe_show_update_notice(): void {
+        if ( $this->is_local_mode() ) return;
+
+        $latest = (string) get_transient( 'cdc_latest_version' );
+        $url    = (string) get_transient( 'cdc_download_url' );
+        if ( $latest && $url && version_compare( $latest, CDC_VERSION, '>' ) ) {
+            echo '<div class="notice notice-warning is-dismissible"><p>';
+            echo 'A new ClientDesk version (' . esc_html( $latest ) . ') is available. ';
+            echo '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener noreferrer">Download update</a>.';
+            echo '</p></div>';
+        }
+    }
+
     // ---------------------------------------------------------------
     // Chat page
     // ---------------------------------------------------------------
@@ -1207,7 +1239,9 @@ final class ClientDesk {
     public function render_chat(): void {
         if ( ! current_user_can( $this->cap() ) ) wp_die( 'Permission denied.' );
         $pages      = get_pages( [ 'sort_column' => 'post_title', 'sort_order' => 'asc' ] );
-        $configured = '' !== trim( (string) get_option( self::OPT_KEY, '' ) ) && '' !== trim( (string) get_option( self::OPT_ENDPOINT, '' ) );
+        $local_mode = $this->is_local_mode();
+        $local_api_key = $local_mode ? $this->local_api_key() : '';
+        $configured = $local_mode || ( '' !== trim( (string) get_option( self::OPT_KEY, '' ) ) && '' !== trim( (string) get_option( self::OPT_ENDPOINT, '' ) ) );
         ?>
         <button id="cd-launch-btn" class="cd-launch-btn">
             <span class="cd-launch-icon">≡</span>
@@ -1485,6 +1519,7 @@ final class ClientDesk {
             var nonce      = <?php echo wp_json_encode( wp_create_nonce( 'cdc_nonce' ) ); ?>;
             var ajaxUrl    = <?php echo wp_json_encode( admin_url( 'admin-ajax.php' ) ); ?>;
             var streamUrl  = <?php echo wp_json_encode( CDC_URL . 'stream.php' ); ?>;
+            var localApiKey = <?php echo wp_json_encode( $local_api_key ); ?>;
             var chat       = document.getElementById('cd-chat');
             var input      = document.getElementById('cd-input');
             var sendBtn    = document.getElementById('cd-send');
@@ -2209,6 +2244,9 @@ final class ClientDesk {
                 params.append('field',   currentField);
                 params.append('message', message);
                 params.append('history', JSON.stringify(history));
+                if (localApiKey) {
+                    params.append('local_api_key', localApiKey);
+                }
 
                 fetch(streamUrl, {
                     method: 'POST',
