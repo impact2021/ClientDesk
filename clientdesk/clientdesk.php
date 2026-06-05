@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.8
+ * Version: 2.9.9
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -11,14 +11,14 @@
 require_once plugin_dir_path( __FILE__ ) . 'vendor/plugin-update-checker/load-v5p5.php';
 
 $clientdesk_update_checker = YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::buildUpdateChecker(
-    'https://github.com/user-attachments/files/28653788/clientdesk-v2_9_8.zip',
+    'https://github.com/user-attachments/files/28653788/clientdesk-v2_9_9.zip',
     __FILE__,
     'clientdesk'
 );
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDC_VERSION', '2.9.8' );
+define( 'CDC_VERSION', '2.9.9' );
 define( 'CDC_URL',     plugin_dir_url( __FILE__ ) );
 define( 'CDC_PATH',    plugin_dir_path( __FILE__ ) );
 
@@ -76,7 +76,9 @@ final class ClientDesk {
         add_action( 'wp_head',               [ $this, 'inject_meta' ], 1 );
         add_action( 'wp_head',               [ $this, 'inject_schema' ], 2 );
         add_action( 'wp_head',               [ $this, 'output_scripts' ], 99 );
-        add_action( 'wp_head',               [ $this, 'output_colours' ], 98 );
+        if ( ! is_admin() ) {
+            add_action( 'wp_head', [ $this, 'output_colours' ], 98 );
+        }
         add_action( 'wp_enqueue_scripts',    [ $this, 'enqueue_frontend' ] );
         // CPT + menus
         add_action( 'init',                  [ $this, 'register_cpt' ] );
