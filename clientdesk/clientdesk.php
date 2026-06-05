@@ -1448,7 +1448,7 @@ final class ClientDesk {
                                 $c_link          = sanitize_hex_color( (string) get_option( self::OPT_COLOUR_LINK,      '' ) ) ?: '';
                                 $c_primary   = '' !== $c_primary_raw ? $c_primary_raw : '#000000';
                                 $c_secondary = '' !== $c_secondary_raw ? $c_secondary_raw : '#000000';
-                                $c_link_value = '' !== $c_link ? $c_link : '#000000';
+                                $c_link = '' !== $c_link ? $c_link : '#000000';
                                 ?>
                                 <table class="form-table cd-colour-table" role="presentation">
                                     <tbody>
@@ -1467,7 +1467,7 @@ final class ClientDesk {
                                         <tr>
                                             <td><label for="cd-colour-link-hex">Link colour</label></td>
                                             <td>
-                                                <input type="text" id="cd-colour-link-hex" class="cd-colour-hex coloris-input" value="<?php echo esc_attr( $c_link_value ); ?>" maxlength="7" data-coloris="">
+                                                <input type="text" id="cd-colour-link-hex" class="cd-colour-hex coloris-input" value="<?php echo esc_attr( $c_link ); ?>" maxlength="7" data-coloris="">
                                             </td>
                                         </tr>
                                     </tbody>
