@@ -263,7 +263,7 @@ if ( !class_exists(PluginUpdateChecker::class, false) ):
 			$foundAssets = array();
 			foreach ($filesToKeys as $fileName => $key) {
 				$fullBannerPath = $assetDirectory . DIRECTORY_SEPARATOR . $fileName;
-				if ( !isset($icons[$key]) && is_file($fullBannerPath) ) {
+				if ( !isset($foundAssets[$key]) && is_file($fullBannerPath) ) {
 					$foundAssets[$key] = $assetBaseUrl . $fileName;
 				}
 			}
