@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.7
+ * Version: 2.9.8
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -11,14 +11,14 @@
 require_once plugin_dir_path( __FILE__ ) . 'vendor/plugin-update-checker/load-v5p5.php';
 
 $clientdesk_update_checker = YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::buildUpdateChecker(
-    'https://github.com/user-attachments/files/28653788/clientdesk-v2_9_6.zip',
+    'https://github.com/user-attachments/files/28653788/clientdesk-v2_9_8.zip',
     __FILE__,
     'clientdesk'
 );
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDC_VERSION', '2.9.7' );
+define( 'CDC_VERSION', '2.9.8' );
 define( 'CDC_URL',     plugin_dir_url( __FILE__ ) );
 define( 'CDC_PATH',    plugin_dir_path( __FILE__ ) );
 
@@ -47,7 +47,6 @@ final class ClientDesk {
     const OPT_DOMAIN       = 'cdc_domain';
     const OPT_FONT_HEADING = 'cdc_font_heading';
     const OPT_FONT_BODY    = 'cdc_font_body';
-    const OPT_LINK_COLOR      = 'cdc_link_color';
     const OPT_COLOUR_PRIMARY   = 'iw_colour_primary';
     const OPT_COLOUR_SECONDARY = 'iw_colour_secondary';
     const OPT_COLOUR_LINK      = 'iw_colour_link';
@@ -130,7 +129,6 @@ final class ClientDesk {
         // Google Fonts injection — builds URL from heading + body font settings
         $font_heading = trim( (string) get_option( self::OPT_FONT_HEADING, '' ) );
         $font_body    = trim( (string) get_option( self::OPT_FONT_BODY, '' ) );
-        $link_color   = sanitize_hex_color( trim( (string) get_option( self::OPT_LINK_COLOR, '' ) ) ) ?: '';
 
         if ( $font_heading || $font_body ) {
             $families = [];
@@ -145,7 +143,7 @@ final class ClientDesk {
 
         }
 
-        if ( $font_heading || $font_body || $link_color ) {
+        if ( $font_heading || $font_body ) {
             echo '<style id="cdc-font-apply">' . "\n"; // phpcs:ignore
             if ( $font_body ) {
                 $fb_css = esc_attr( $font_heading === $font_body ? $font_heading : $font_body );
@@ -154,9 +152,6 @@ final class ClientDesk {
             if ( $font_heading ) {
                 $fh_css = esc_attr( $font_heading );
                 echo 'h1, h2, h3, h4, h5, h6 { font-family: \'' . $fh_css . '\', sans-serif !important; }' . "\n"; // phpcs:ignore
-            }
-            if ( $link_color ) {
-                echo 'a, a:visited { color: ' . esc_attr( $link_color ) . ' !important; }' . "\n"; // phpcs:ignore
             }
             echo '</style>' . "\n"; // phpcs:ignore
         }
@@ -558,8 +553,6 @@ final class ClientDesk {
         // ClientDesk chat pages
         if ( false !== strpos( $hook, self::MENU_SLUG ) || false !== strpos( $hook, self::HISTORY_SLUG ) ) {
             wp_enqueue_style( 'cdc-ui', CDC_URL . 'assets/clientdesk.css', [], CDC_VERSION );
-            wp_enqueue_style( 'wp-color-picker' );
-            wp_enqueue_script( 'wp-color-picker' );
             wp_enqueue_media();
         }
         // Meta box + globals page — code editors
@@ -1231,7 +1224,6 @@ final class ClientDesk {
                         <?php
                         $saved_heading = trim( (string) get_option( self::OPT_FONT_HEADING, '' ) );
                         $google_fonts = self::google_fonts_list();
-                        $saved_link_color = sanitize_hex_color( (string) get_option( self::OPT_LINK_COLOR, '' ) ) ?: '#0000ee';
                         echo '<option value=""'  . selected( '', $saved_heading, false ) . '>— Heading font —</option>';
                         foreach ( $google_fonts as $font ) {
                             echo '<option value="' . esc_attr( $font ) . '"' . selected( $font, $saved_heading, false ) . '>' . esc_html( $font ) . '</option>';
@@ -1248,8 +1240,6 @@ final class ClientDesk {
                         }
                         ?>
                     </select>
-                    <span class="cd-font-inline-label">L:</span>
-                    <input type="text" id="cd-link-color" class="cd-color-input-inline" value="<?php echo esc_attr( $saved_link_color ); ?>" aria-label="Link color">
                     <button class="cd-font-save" id="cd-font-save">Save</button>
                     <span class="cd-font-saved" id="cd-font-saved" style="display:none;">✓</span>
                 </div>
@@ -1451,7 +1441,13 @@ final class ClientDesk {
                                 <?php
                                 $c_primary   = sanitize_hex_color( (string) get_option( self::OPT_COLOUR_PRIMARY,   '' ) ) ?: '#000000';
                                 $c_secondary = sanitize_hex_color( (string) get_option( self::OPT_COLOUR_SECONDARY, '' ) ) ?: '#000000';
-                                $c_link      = sanitize_hex_color( (string) get_option( self::OPT_COLOUR_LINK,      '' ) ) ?: '#000000';
+                                $c_link      = sanitize_hex_color( (string) get_option( self::OPT_COLOUR_LINK,      '' ) ) ?: '';
+                                if ( '' === sanitize_hex_color( (string) get_option( self::OPT_COLOUR_PRIMARY, '' ) ) && '' === $c_link ) {
+                                    $c_link = sanitize_hex_color( (string) get_option( 'cdc_link_color', '' ) ) ?: '#000000';
+                                }
+                                if ( '' === $c_link ) {
+                                    $c_link = '#000000';
+                                }
                                 ?>
                                 <table class="form-table cd-colour-table" role="presentation">
                                     <tbody>
@@ -2784,25 +2780,15 @@ final class ClientDesk {
             var fontSave  = document.getElementById('cd-font-save');
             var fontSaved = document.getElementById('cd-font-saved');
 
-            if (window.jQuery && window.jQuery.fn && window.jQuery.fn.wpColorPicker) {
-                var $linkColor = window.jQuery('#cd-link-color');
-                if ($linkColor.length) {
-                    $linkColor.wpColorPicker({ palettes: true });
-                }
-            }
-
             function saveFonts() {
                 var heading = document.getElementById('cd-font-heading').value;
                 var body    = document.getElementById('cd-font-body').value;
-                var linkColorEl = document.getElementById('cd-link-color');
-                var linkColor = linkColorEl ? linkColorEl.value : '';
                 fontSave.disabled = true;
                 var d = new FormData();
                 d.append('action',       'cdc_save_fonts');
                 d.append('nonce',        nonce);
                 d.append('font_heading', heading);
                 d.append('font_body',    body);
-                d.append('link_color',   linkColor);
                 fetch(ajaxUrl, { method: 'POST', body: d })
                     .then(function(r) { return r.json(); })
                     .then(function(res) {
@@ -3184,13 +3170,10 @@ final class ClientDesk {
 
         $heading = sanitize_text_field( wp_unslash( $_POST['font_heading'] ?? '' ) );
         $body    = sanitize_text_field( wp_unslash( $_POST['font_body']    ?? '' ) );
-        $link_color = sanitize_hex_color( wp_unslash( $_POST['link_color'] ?? '' ) ) ?: '';
-
         update_option( self::OPT_FONT_HEADING, $heading );
         update_option( self::OPT_FONT_BODY,    $body );
-        update_option( self::OPT_LINK_COLOR,   $link_color );
 
-        wp_send_json_success( [ 'font_heading' => $heading, 'font_body' => $body, 'link_color' => $link_color ] );
+        wp_send_json_success( [ 'font_heading' => $heading, 'font_body' => $body ] );
     }
 
     // ---------------------------------------------------------------
@@ -3201,9 +3184,9 @@ final class ClientDesk {
         check_ajax_referer( 'cdc_nonce', 'nonce' );
         if ( ! current_user_can( $this->cap() ) ) wp_send_json_error( [ 'message' => 'Permission denied.' ] );
 
-        $primary   = sanitize_hex_color( wp_unslash( $_POST['colour_primary']   ?? '' ) ) ?: '#000000';
-        $secondary = sanitize_hex_color( wp_unslash( $_POST['colour_secondary'] ?? '' ) ) ?: '#000000';
-        $link      = sanitize_hex_color( wp_unslash( $_POST['colour_link']      ?? '' ) ) ?: '#000000';
+        $primary   = sanitize_hex_color( wp_unslash( $_POST['colour_primary']   ?? '' ) ) ?: '';
+        $secondary = sanitize_hex_color( wp_unslash( $_POST['colour_secondary'] ?? '' ) ) ?: '';
+        $link      = sanitize_hex_color( wp_unslash( $_POST['colour_link']      ?? '' ) ) ?: '';
 
         update_option( self::OPT_COLOUR_PRIMARY,   $primary );
         update_option( self::OPT_COLOUR_SECONDARY, $secondary );
