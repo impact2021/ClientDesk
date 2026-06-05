@@ -555,6 +555,8 @@ final class ClientDesk {
         // ClientDesk chat pages
         if ( false !== strpos( $hook, self::MENU_SLUG ) || false !== strpos( $hook, self::HISTORY_SLUG ) ) {
             wp_enqueue_style( 'cdc-ui', CDC_URL . 'assets/clientdesk.css', [], CDC_VERSION );
+            wp_enqueue_style( 'coloris', 'https://cdn.jsdelivr.net/npm/@melloware/coloris@0.24.0/dist/coloris.min.css', [], '0.24.0' );
+            wp_enqueue_script( 'coloris', 'https://cdn.jsdelivr.net/npm/@melloware/coloris@0.24.0/dist/coloris.min.js', [], '0.24.0', true );
             wp_enqueue_media();
         }
         // Meta box + globals page — code editors
@@ -1444,34 +1446,28 @@ final class ClientDesk {
                                 $c_primary_raw   = sanitize_hex_color( (string) get_option( self::OPT_COLOUR_PRIMARY,   '' ) ) ?: '';
                                 $c_secondary_raw = sanitize_hex_color( (string) get_option( self::OPT_COLOUR_SECONDARY, '' ) ) ?: '';
                                 $c_link          = sanitize_hex_color( (string) get_option( self::OPT_COLOUR_LINK,      '' ) ) ?: '';
-                                if ( '' === $c_primary_raw && '' === $c_link ) {
-                                    $c_link = sanitize_hex_color( (string) get_option( 'cdc_link_color', '' ) ) ?: '';
-                                }
                                 $c_primary   = '' !== $c_primary_raw ? $c_primary_raw : '#000000';
                                 $c_secondary = '' !== $c_secondary_raw ? $c_secondary_raw : '#000000';
-                                $c_link_swatch = '' !== $c_link ? $c_link : '#000000';
+                                $c_link_value = '' !== $c_link ? $c_link : '#000000';
                                 ?>
                                 <table class="form-table cd-colour-table" role="presentation">
                                     <tbody>
                                         <tr>
-                                            <td><label for="cd-colour-primary">Primary colour</label></td>
+                                            <td><label for="cd-colour-primary-hex">Primary colour</label></td>
                                             <td>
-                                                <input type="color" id="cd-colour-primary" class="cd-colour-swatch" data-hex="cd-colour-primary-hex" value="<?php echo esc_attr( $c_primary ); ?>" style="width:40px!important;height:40px!important;padding:0!important;border:1px solid #ccc!important;border-radius:6px!important;cursor:pointer!important;appearance:none!important;-webkit-appearance:none!important;background:none!important;min-height:0!important;">
-                                                <input type="text" id="cd-colour-primary-hex" class="cd-colour-hex" value="<?php echo esc_attr( $c_primary ); ?>" maxlength="7" style="width:90px;margin-left:8px;vertical-align:middle;">
+                                                <input type="text" id="cd-colour-primary-hex" class="cd-colour-hex coloris-input" value="<?php echo esc_attr( $c_primary ); ?>" maxlength="7" data-coloris="">
                                             </td>
                                         </tr>
                                         <tr>
-                                            <td><label for="cd-colour-secondary">Secondary colour</label></td>
+                                            <td><label for="cd-colour-secondary-hex">Secondary colour</label></td>
                                             <td>
-                                                <input type="color" id="cd-colour-secondary" class="cd-colour-swatch" data-hex="cd-colour-secondary-hex" value="<?php echo esc_attr( $c_secondary ); ?>" style="width:40px!important;height:40px!important;padding:0!important;border:1px solid #ccc!important;border-radius:6px!important;cursor:pointer!important;appearance:none!important;-webkit-appearance:none!important;background:none!important;min-height:0!important;">
-                                                <input type="text" id="cd-colour-secondary-hex" class="cd-colour-hex" value="<?php echo esc_attr( $c_secondary ); ?>" maxlength="7" style="width:90px;margin-left:8px;vertical-align:middle;">
+                                                <input type="text" id="cd-colour-secondary-hex" class="cd-colour-hex coloris-input" value="<?php echo esc_attr( $c_secondary ); ?>" maxlength="7" data-coloris="">
                                             </td>
                                         </tr>
                                         <tr>
-                                            <td><label for="cd-colour-link">Link colour</label></td>
+                                            <td><label for="cd-colour-link-hex">Link colour</label></td>
                                             <td>
-                                                <input type="color" id="cd-colour-link" class="cd-colour-swatch" data-hex="cd-colour-link-hex" value="<?php echo esc_attr( $c_link_swatch ); ?>" style="width:40px!important;height:40px!important;padding:0!important;border:1px solid #ccc!important;border-radius:6px!important;cursor:pointer!important;appearance:none!important;-webkit-appearance:none!important;background:none!important;min-height:0!important;">
-                                                <input type="text" id="cd-colour-link-hex" class="cd-colour-hex" value="<?php echo esc_attr( $c_link ); ?>" maxlength="7" style="width:90px;margin-left:8px;vertical-align:middle;">
+                                                <input type="text" id="cd-colour-link-hex" class="cd-colour-hex coloris-input" value="<?php echo esc_attr( $c_link_value ); ?>" maxlength="7" data-coloris="">
                                             </td>
                                         </tr>
                                     </tbody>
@@ -2806,32 +2802,22 @@ final class ClientDesk {
             fontSave.addEventListener('click', saveFonts);
 
             // ---------------------------------------------------------------
-            // Colour scheme tab — swatch ↔ hex sync and save
+            // Colour scheme tab — Coloris init and save
             // ---------------------------------------------------------------
 
             (function() {
-                var swatches = document.querySelectorAll('.cd-colour-swatch');
-                swatches.forEach(function(swatch) {
-                    var hexId  = swatch.getAttribute('data-hex');
-                    var hexEl  = document.getElementById(hexId);
-                    if (!hexEl) return;
-
-                    // colour picker → text input
-                    swatch.addEventListener('input', function() {
-                        hexEl.value = swatch.value.toUpperCase();
+                if (typeof Coloris !== 'undefined') {
+                    Coloris({
+                        el: '.coloris-input',
+                        theme: 'default',
+                        themeMode: 'light',
+                        format: 'hex',
+                        swatches: []
                     });
+                }
 
-                    // text input → colour picker (valid 6-digit hex only)
-                    hexEl.addEventListener('input', function() {
-                        var val = hexEl.value.trim();
-                        if (/^#[0-9a-fA-F]{6}$/.test(val)) {
-                            swatch.value = val;
-                        }
-                    });
-                });
-
-                var colourSaveBtn   = document.getElementById('cd-colour-save');
-                var colourSavedMsg  = document.getElementById('cd-colour-saved');
+                var colourSaveBtn  = document.getElementById('cd-colour-save');
+                var colourSavedMsg = document.getElementById('cd-colour-saved');
 
                 if (colourSaveBtn) {
                     colourSaveBtn.addEventListener('click', function() {
@@ -2839,17 +2825,14 @@ final class ClientDesk {
                         var d = new FormData();
                         d.append('action',           'cdc_save_colours');
                         d.append('nonce',            nonce);
-                        d.append('colour_primary',   document.getElementById('cd-colour-primary').value);
-                        d.append('colour_secondary', document.getElementById('cd-colour-secondary').value);
-                        d.append('colour_link',      document.getElementById('cd-colour-link').value);
+                        d.append('colour_primary',   document.getElementById('cd-colour-primary-hex').value);
+                        d.append('colour_secondary', document.getElementById('cd-colour-secondary-hex').value);
+                        d.append('colour_link',      document.getElementById('cd-colour-link-hex').value);
                         fetch(ajaxUrl, { method: 'POST', body: d })
                             .then(function(r) { return r.json(); })
                             .then(function(res) {
                                 colourSaveBtn.disabled = false;
-                                if (res.success) {
-                                    colourSavedMsg.style.display = 'inline';
-                                    setTimeout(function() { colourSavedMsg.style.display = 'none'; }, 1400);
-                                }
+                                if (res.success) { colourSavedMsg.style.display = 'inline'; setTimeout(function(){ colourSavedMsg.style.display = 'none'; }, 2000); }
                             })
                             .catch(function() { colourSaveBtn.disabled = false; });
                     });
