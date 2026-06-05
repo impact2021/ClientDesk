@@ -97,6 +97,7 @@ final class ClientDesk {
         add_action( 'wp_ajax_cdc_save_schema',    [ $this, 'ajax_save_schema' ] );
         add_action( 'wp_ajax_cdc_get_schema',     [ $this, 'ajax_get_schema' ] );
         add_action( 'wp_ajax_cdc_save_fonts',     [ $this, 'ajax_save_fonts' ] );
+        add_action( 'wp_ajax_cdc_restore_change', [ $this, 'ajax_restore_change' ] );
     }
 
     // ---------------------------------------------------------------
@@ -980,6 +981,32 @@ final class ClientDesk {
     }
 
     // ---------------------------------------------------------------
+    // AJAX — restore to before a specific logged change
+    // ---------------------------------------------------------------
+
+    public function ajax_restore_change(): void {
+        check_ajax_referer( 'cdc_nonce', 'nonce' );
+        if ( ! current_user_can( $this->cap() ) ) wp_send_json_error( [ 'message' => 'Permission denied.' ] );
+        $change_id = isset( $_POST['change_id'] ) ? (int) $_POST['change_id'] : 0;
+        if ( ! $change_id ) wp_send_json_error( [ 'message' => 'Invalid change ID.' ] );
+        $page_id = (int) get_post_meta( $change_id, '_cdc_page_id', true );
+        $key     = (string) get_post_meta( $change_id, '_cdc_restore_key', true );
+        $content = get_post_meta( $change_id, '_cdc_restore_content', true );
+        if ( $content === '' || $content === false ) wp_send_json_error( [ 'message' => 'No restore data for this change. Only changes made after this update have a restore point.' ] );
+        $valid_keys = [ CDC_FIELD_HEADER, CDC_FIELD_BODY, CDC_FIELD_FOOTER, CDC_FIELD_SCRIPTS ];
+        if ( $key && ! in_array( $key, $valid_keys, true ) ) wp_send_json_error( [ 'message' => 'Invalid restore data.' ] );
+        if ( $key && $page_id > 0 ) {
+            update_post_meta( $page_id, $key, $content );
+        } elseif ( $page_id > 0 ) {
+            $result = wp_update_post( [ 'ID' => $page_id, 'post_content' => $content ], true );
+            if ( is_wp_error( $result ) ) wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+        } else {
+            wp_send_json_error( [ 'message' => 'Cannot restore: page not found.' ] );
+        }
+        wp_send_json_success( [ 'message' => 'Page restored to before this change.' ] );
+    }
+
+    // ---------------------------------------------------------------
     // AJAX — usage
     // ---------------------------------------------------------------
 
@@ -1160,7 +1187,17 @@ final class ClientDesk {
 
     private function log_change( int $page_id, string $summary ): void {
         $id = wp_insert_post( [ 'post_type' => 'cdc_change', 'post_status' => 'publish', 'post_title' => substr( $summary, 0, 80 ), 'post_author' => get_current_user_id() ] );
-        if ( ! is_wp_error( $id ) ) { update_post_meta( $id, '_cdc_page_id', $page_id ); update_post_meta( $id, '_cdc_summary', $summary ); }
+        if ( ! is_wp_error( $id ) ) {
+            update_post_meta( $id, '_cdc_page_id', $page_id );
+            update_post_meta( $id, '_cdc_summary', $summary );
+            // Store the most recent snapshot so the History page can restore to before this change
+            $snaps = (array) get_post_meta( $page_id, '_cdc_snapshots', true );
+            if ( ! empty( $snaps ) ) {
+                $last = end( $snaps );
+                update_post_meta( $id, '_cdc_restore_key',     $last['key']     ?? '' );
+                update_post_meta( $id, '_cdc_restore_content', $last['content'] ?? '' );
+            }
+        }
     }
 
     private function config(): array {
@@ -2787,6 +2824,7 @@ final class ClientDesk {
     public function render_history(): void {
         if ( ! current_user_can( $this->cap() ) ) wp_die( 'Permission denied.' );
         $changes = get_posts( [ 'post_type' => 'cdc_change', 'post_status' => 'publish', 'posts_per_page' => 50, 'orderby' => 'date', 'order' => 'DESC' ] );
+        $nonce   = wp_create_nonce( 'cdc_nonce' );
         ?>
         <div class="cd-wrap cd-wrap--history">
             <div class="cd-topbar">
@@ -2796,20 +2834,30 @@ final class ClientDesk {
             </div>
             <div class="cd-history">
                 <h2>Change History</h2>
+                <p style="color:#666;margin-top:-8px;margin-bottom:20px;">Each entry shows what was changed. Use <strong>Restore</strong> to roll the page back to how it was <em>before</em> that change.</p>
+                <div id="cd-history-msg" style="display:none;margin-bottom:16px;padding:12px 16px;border-radius:6px;font-weight:500;"></div>
                 <?php if ( empty( $changes ) ) : ?>
                     <p class="cd-history-empty">No changes recorded yet.</p>
                 <?php else : ?>
                     <table class="cd-history-table">
-                        <thead><tr><th>Date</th><th>What changed</th><th>Page</th></tr></thead>
+                        <thead><tr><th>Date</th><th>What changed</th><th>Page</th><th></th></tr></thead>
                         <tbody>
                         <?php foreach ( $changes as $c ) :
-                            $pid = (int) get_post_meta( $c->ID, '_cdc_page_id', true );
-                            $sum = (string) get_post_meta( $c->ID, '_cdc_summary', true );
+                            $pid         = (int) get_post_meta( $c->ID, '_cdc_page_id', true );
+                            $sum         = (string) get_post_meta( $c->ID, '_cdc_summary', true );
+                            $has_restore = '' !== (string) get_post_meta( $c->ID, '_cdc_restore_content', true );
                         ?>
                             <tr>
                                 <td><?php echo esc_html( get_date_from_gmt( $c->post_date_gmt, get_option('date_format') . ' ' . get_option('time_format') ) ); ?></td>
                                 <td><?php echo esc_html( $sum ?: $c->post_title ); ?></td>
                                 <td><?php echo $pid ? '<a href="' . esc_url( get_permalink( $pid ) ) . '" target="_blank">' . esc_html( get_the_title( $pid ) ) . '</a>' : '—'; ?></td>
+                                <td>
+                                    <?php if ( $has_restore ) : ?>
+                                        <button class="cd-btn-restore button button-secondary" data-change-id="<?php echo esc_attr( $c->ID ); ?>" data-nonce="<?php echo esc_attr( $nonce ); ?>">Restore</button>
+                                    <?php else : ?>
+                                        <span style="color:#aaa;font-size:12px;">—</span>
+                                    <?php endif; ?>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                         </tbody>
@@ -2817,6 +2865,47 @@ final class ClientDesk {
                 <?php endif; ?>
             </div>
         </div>
+        <script>
+        (function(){
+            var ajaxUrl = <?php echo json_encode( admin_url( 'admin-ajax.php' ) ); ?>;
+            document.querySelectorAll('.cd-btn-restore').forEach(function(btn){
+                btn.addEventListener('click', function(){
+                    if ( ! confirm('Are you sure? This will restore the page to how it was before this change.') ) return;
+                    btn.disabled = true;
+                    btn.textContent = 'Restoring…';
+                    var fd = new FormData();
+                    fd.append('action',    'cdc_restore_change');
+                    fd.append('nonce',     btn.dataset.nonce);
+                    fd.append('change_id', btn.dataset.changeId);
+                    fetch(ajaxUrl, { method: 'POST', body: fd })
+                        .then(function(r){ return r.json(); })
+                        .then(function(data){
+                            var msgEl = document.getElementById('cd-history-msg');
+                            if ( data.success ) {
+                                msgEl.style.display    = 'block';
+                                msgEl.style.background = '#d4edda';
+                                msgEl.style.color      = '#155724';
+                                msgEl.textContent      = data.data && data.data.message ? data.data.message : 'Page restored.';
+                                btn.textContent = 'Restored ✓';
+                            } else {
+                                msgEl.style.display    = 'block';
+                                msgEl.style.background = '#f8d7da';
+                                msgEl.style.color      = '#721c24';
+                                msgEl.textContent      = data.data && data.data.message ? data.data.message : 'Restore failed.';
+                                btn.disabled    = false;
+                                btn.textContent = 'Restore';
+                            }
+                            msgEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        })
+                        .catch(function(){
+                            btn.disabled    = false;
+                            btn.textContent = 'Restore';
+                            alert('Network error. Please try again.');
+                        });
+                });
+            });
+        })();
+        </script>
         <?php
     }
 
