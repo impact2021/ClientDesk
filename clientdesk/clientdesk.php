@@ -1439,15 +1439,15 @@ final class ClientDesk {
                         <div class="cd-panel-pane" id="cd-pane-colours" style="display:none;">
                             <div class="cd-colours-wrap">
                                 <?php
-                                $c_primary   = sanitize_hex_color( (string) get_option( self::OPT_COLOUR_PRIMARY,   '' ) ) ?: '#000000';
-                                $c_secondary = sanitize_hex_color( (string) get_option( self::OPT_COLOUR_SECONDARY, '' ) ) ?: '#000000';
-                                $c_link      = sanitize_hex_color( (string) get_option( self::OPT_COLOUR_LINK,      '' ) ) ?: '';
-                                if ( '' === sanitize_hex_color( (string) get_option( self::OPT_COLOUR_PRIMARY, '' ) ) && '' === $c_link ) {
-                                    $c_link = sanitize_hex_color( (string) get_option( 'cdc_link_color', '' ) ) ?: '#000000';
+                                $c_primary_raw   = sanitize_hex_color( (string) get_option( self::OPT_COLOUR_PRIMARY,   '' ) ) ?: '';
+                                $c_secondary_raw = sanitize_hex_color( (string) get_option( self::OPT_COLOUR_SECONDARY, '' ) ) ?: '';
+                                $c_link          = sanitize_hex_color( (string) get_option( self::OPT_COLOUR_LINK,      '' ) ) ?: '';
+                                if ( '' === $c_primary_raw && '' === $c_link ) {
+                                    $c_link = sanitize_hex_color( (string) get_option( 'cdc_link_color', '' ) ) ?: '';
                                 }
-                                if ( '' === $c_link ) {
-                                    $c_link = '#000000';
-                                }
+                                $c_primary   = '' !== $c_primary_raw ? $c_primary_raw : '#000000';
+                                $c_secondary = '' !== $c_secondary_raw ? $c_secondary_raw : '#000000';
+                                $c_link_swatch = '' !== $c_link ? $c_link : '#000000';
                                 ?>
                                 <table class="form-table cd-colour-table" role="presentation">
                                     <tbody>
@@ -1468,7 +1468,7 @@ final class ClientDesk {
                                         <tr>
                                             <td><label for="cd-colour-link">Link colour</label></td>
                                             <td>
-                                                <input type="color" id="cd-colour-link" class="cd-colour-swatch" data-hex="cd-colour-link-hex" value="<?php echo esc_attr( $c_link ); ?>" style="width:40px;height:40px;padding:0;border:1px solid #ccc;border-radius:6px;cursor:pointer;appearance:none;-webkit-appearance:none;">
+                                                <input type="color" id="cd-colour-link" class="cd-colour-swatch" data-hex="cd-colour-link-hex" value="<?php echo esc_attr( $c_link_swatch ); ?>" style="width:40px;height:40px;padding:0;border:1px solid #ccc;border-radius:6px;cursor:pointer;appearance:none;-webkit-appearance:none;">
                                                 <input type="text" id="cd-colour-link-hex" class="cd-colour-hex" value="<?php echo esc_attr( $c_link ); ?>" maxlength="7" style="width:90px;margin-left:8px;vertical-align:middle;">
                                             </td>
                                         </tr>
