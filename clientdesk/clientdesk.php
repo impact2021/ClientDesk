@@ -2192,8 +2192,10 @@ final class ClientDesk {
                                         if(data.action.page_url){extra=document.createElement('div');extra.className='cd-view-link';extra.innerHTML='<a href="'+data.action.page_url+'" target="_blank">View page \u2192</a>';}
                                         var patchErrors=data.action.patch_errors||[];
                                         var insertError=data.action.insert_error||null;
-                                        if(patchErrors.length||insertError){
-                                            addBubble('cd','ERROR',patchErrors.join(' ')||insertError);
+                                        if(patchErrors.length){
+                                            addBubble('cd','ERROR',patchErrors.join(' '));
+                                        } else if(insertError){
+                                            addBubble('cd','CLIENTDESK',insertError);
                                         } else {
                                             addBubble('cd','DONE',summary+' Live on your site now. Use "Undo" below if needed.',extra);
                                             addRollback(currentPageId);

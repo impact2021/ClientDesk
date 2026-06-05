@@ -163,7 +163,7 @@ function cdc_apply_insert( string $html, string $position, string $anchor, strin
         return [ 'html' => $html, 'error' => null ];
     }
 
-    return [ 'html' => $html, 'error' => 'Could not find the anchor point. The page may have changed — please try again.' ];
+    return [ 'html' => $html, 'error' => 'I could not find the exact place to add that section. Where would you like it: at the top, at the bottom, or after a specific heading?' ];
 }
 
 $page_html = cdc_stream_get_content( $page_id, $field );
