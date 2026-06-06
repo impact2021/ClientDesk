@@ -1766,10 +1766,10 @@ final class ClientDesk {
 
             function isImageIntent(text) {
                 var t = text.toLowerCase();
-                return /\b(swap|replace|switch)\b.{0,40}\b(image|photo|picture|banner|background)\b/.test(t)
-                    || /\b(image|photo|picture|banner|background)\b.{0,40}\b(swap|replace|switch)\b/.test(t)
-                    || /\b(add|insert|upload|use)\b.{0,40}\b(image|photo|picture)\b/.test(t)
-                    || /\b(hero image|background image|banner image)\b.{0,40}\b(update|replace|swap)\b/.test(t);
+                return /\b(swap|replace|switch)\b.{0,80}\b(image|photo|picture|banner|background)\b/.test(t)
+                    || /\b(image|photo|picture|banner|background)\b.{0,80}\b(swap|replace|switch)\b/.test(t)
+                    || /\b(add|insert|upload|use)\b.{0,80}\b(image|photo|picture)\b/.test(t)
+                    || /\b(hero image|background image|banner image)\b.{0,80}\b(update|replace|swap)\b/.test(t);
             }
 
             function isApprovalMessage(text) {

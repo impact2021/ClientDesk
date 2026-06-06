@@ -109,7 +109,7 @@ function cdc_clean_for_claude( $html ) {
 
 function cdc_parse_action( string $response ): ?array {
     $trimmed = trim( $response );
-    if ( str_starts_with( $trimmed, '{' ) ) {
+    if ( isset( $trimmed[0] ) && $trimmed[0] === '{' ) {
         $data = json_decode( $trimmed, true );
         if ( is_array( $data ) && isset( $data['action'] ) ) return $data;
     }
@@ -143,7 +143,8 @@ function cdc_clean_history( array $history, int $max_turns = 8 ): array {
             if ( is_array( $action ) ) {
                 $content = (string) ( $action['message'] ?? $action['summary'] ?? '' );
             }
-            if ( substr_count( $content, '```' ) % 2 === 1 ) {
+            // Drop obviously truncated assistant replies so they do not poison the next model turn.
+            if ( ! $action && substr_count( $content, '```' ) % 2 === 1 ) {
                 continue;
             }
         }
@@ -251,7 +252,8 @@ function cdc_stream_claude( string $api_key, array $payload, bool $emit_tokens =
                     $token = $json['delta']['text'] ?? '';
                     if ( $token !== '' ) {
                         $full_text .= $token;
-                        if ( $emit_tokens && trim( $full_text ) !== '' && ! str_starts_with( ltrim( $full_text ), '{' ) ) {
+                        $trimmed_text = ltrim( $full_text );
+                        if ( $emit_tokens && $trimmed_text !== '' && ( ! isset( $trimmed_text[0] ) || $trimmed_text[0] !== '{' ) ) {
                             echo 'event: token' . "\n";
                             echo 'data: ' . json_encode( [ 'text' => $token ] ) . "\n\n";
                             if ( ob_get_level() > 0 ) ob_flush();
@@ -452,6 +454,8 @@ if ( $font_heading || $font_body ) {
     $font_context .= "Always use these font names in any CSS you write — never substitute or invent alternatives.\n";
 }
 
+$skip_apply = false;
+
 if ( $conversation_mode === 'apply_pending' ) {
     if ( empty( $pending_action ) ) {
         $action_data = [
@@ -466,10 +470,10 @@ if ( $conversation_mode === 'apply_pending' ) {
         $report_summary   = $action_data['message'];
         $apply_result     = null;
         $clean_history[]  = [ 'role' => 'assistant', 'content' => $action_data['message'] ];
-        goto cdc_done;
+        $skip_apply       = true;
     }
 
-    if ( $is_blank ) {
+    if ( ! $skip_apply && $is_blank ) {
         $system = <<<PROMPT
 You are ClientDesk, an AI assistant that helps website owners build website content from scratch.
 
@@ -488,7 +492,7 @@ Rules:
 - Write complete semantic HTML with any needed inline CSS or a <style> block
 - Make it mobile responsive
 PROMPT;
-    } else {
+    } elseif ( ! $skip_apply ) {
         $system = <<<PROMPT
 You are ClientDesk, an AI assistant that helps website owners update website content.
 
@@ -519,10 +523,12 @@ Rules:
 PROMPT;
     }
 
-    $messages = [];
-    $messages[] = [ 'role' => 'user', 'content' => $pending_action['user_message'] ];
-    $messages[] = [ 'role' => 'assistant', 'content' => $pending_action['assistant_message'] ];
-    $messages[] = [ 'role' => 'user', 'content' => 'The user approved that exact change. Apply it now and return only the JSON action.' ];
+    if ( ! $skip_apply ) {
+        $messages = [];
+        $messages[] = [ 'role' => 'user', 'content' => $pending_action['user_message'] ];
+        $messages[] = [ 'role' => 'assistant', 'content' => $pending_action['assistant_message'] ];
+        $messages[] = [ 'role' => 'user', 'content' => 'The user approved that exact change. Apply it now and return only the JSON action.' ];
+    }
 } elseif ( $is_blank ) {
     $system = <<<PROMPT
 You are ClientDesk, an AI assistant that helps website owners build website content.
@@ -584,87 +590,89 @@ header( 'Cache-Control: no-cache' );
 header( 'X-Accel-Buffering: no' );
 while ( ob_get_level() > 0 ) ob_end_clean();
 
-$payload = [
-    'model'      => $model,
-    'max_tokens' => 4000,
-    'stream'     => true,
-    'system'     => $system,
-    'messages'   => $messages,
-];
-
-$result        = cdc_stream_claude( $api_key, $payload, false );
-$full_text     = $result['full_text'];
-$input_tokens  = $result['input_tokens'];
-$output_tokens = $result['output_tokens'];
-$curl_error    = $result['curl_error'];
-$curl_errno    = $result['curl_errno'];
-
-if ( $curl_errno ) {
-    cdc_slog( 'Anthropic cURL error ' . $curl_errno . ': ' . $curl_error );
-    echo 'event: error' . "\n";
-    echo 'data: ' . json_encode( [ 'message' => 'Could not reach Anthropic: ' . $curl_error ] ) . "\n\n";
-    flush();
-    exit;
-}
-
-if ( '' === $full_text ) {
-    echo 'event: error' . "\n";
-    echo 'data: ' . json_encode( [ 'message' => 'Claude returned an empty response.' ] ) . "\n\n";
-    flush();
-    exit;
-}
-
-$action_data = cdc_parse_action( $full_text );
-if ( $conversation_mode === 'apply_pending' && ! cdc_is_valid_action_for_mode( $action_data, $conversation_mode ) ) {
-    $retry_payload              = $payload;
-    $retry_payload['messages'][] = [ 'role' => 'assistant', 'content' => $full_text ];
-    $retry_payload['messages'][] = [ 'role' => 'user', 'content' => 'That was invalid. Return only one JSON action right now. No prose, no code fences, no explanation.' ];
-
-    $retry_result = cdc_stream_claude( $api_key, $retry_payload, false );
-    $input_tokens += $retry_result['input_tokens'];
-    $output_tokens += $retry_result['output_tokens'];
-
-    if ( ! $retry_result['curl_errno'] && '' !== $retry_result['full_text'] ) {
-        $full_text    = $retry_result['full_text'];
-        $action_data  = cdc_parse_action( $full_text );
-        $curl_error   = $retry_result['curl_error'];
-        $curl_errno   = $retry_result['curl_errno'];
-    } else {
-        $curl_error = $retry_result['curl_error'];
-        $curl_errno = $retry_result['curl_errno'];
-    }
-}
-
-if ( $curl_errno ) {
-    cdc_slog( 'Anthropic retry cURL error ' . $curl_errno . ': ' . $curl_error );
-    echo 'event: error' . "\n";
-    echo 'data: ' . json_encode( [ 'message' => 'Could not reach Anthropic: ' . $curl_error ] ) . "\n\n";
-    flush();
-    exit;
-}
-
-if ( ! cdc_is_valid_action_for_mode( $action_data, $conversation_mode ) ) {
-    $action_data = [
-        'action'  => 'clarify',
-        'message' => 'I lost the draft for that change. Please describe it again in one sentence and I’ll redo it cleanly.',
+if ( ! $skip_apply ) {
+    $payload = [
+        'model'      => $model,
+        'max_tokens' => 4000,
+        'stream'     => true,
+        'system'     => $system,
+        'messages'   => $messages,
     ];
-    $full_text = $action_data['message'];
+
+    $result        = cdc_stream_claude( $api_key, $payload, false );
+    $full_text     = $result['full_text'];
+    $input_tokens  = $result['input_tokens'];
+    $output_tokens = $result['output_tokens'];
+    $curl_error    = $result['curl_error'];
+    $curl_errno    = $result['curl_errno'];
+
+    if ( $curl_errno ) {
+        cdc_slog( 'Anthropic cURL error ' . $curl_errno . ': ' . $curl_error );
+        echo 'event: error' . "\n";
+        echo 'data: ' . json_encode( [ 'message' => 'Could not reach Anthropic: ' . $curl_error ] ) . "\n\n";
+        flush();
+        exit;
+    }
+
+    if ( '' === $full_text ) {
+        echo 'event: error' . "\n";
+        echo 'data: ' . json_encode( [ 'message' => 'Claude returned an empty response.' ] ) . "\n\n";
+        flush();
+        exit;
+    }
+
+    $action_data = cdc_parse_action( $full_text );
+    if ( $conversation_mode === 'apply_pending' && ! cdc_is_valid_action_for_mode( $action_data, $conversation_mode ) ) {
+        $retry_payload               = $payload;
+        $retry_payload['messages'][] = [ 'role' => 'assistant', 'content' => $full_text ];
+        $retry_payload['messages'][] = [ 'role' => 'user', 'content' => 'That was invalid. Return only one JSON action right now. No prose, no code fences, no explanation.' ];
+
+        $retry_result = cdc_stream_claude( $api_key, $retry_payload, false );
+        $input_tokens += $retry_result['input_tokens'];
+        $output_tokens += $retry_result['output_tokens'];
+
+        if ( ! $retry_result['curl_errno'] && '' !== $retry_result['full_text'] ) {
+            $full_text    = $retry_result['full_text'];
+            $action_data  = cdc_parse_action( $full_text );
+            $curl_error   = $retry_result['curl_error'];
+            $curl_errno   = $retry_result['curl_errno'];
+        } else {
+            $curl_error = $retry_result['curl_error'];
+            $curl_errno = $retry_result['curl_errno'];
+        }
+    }
+
+    if ( $curl_errno ) {
+        cdc_slog( 'Anthropic retry cURL error ' . $curl_errno . ': ' . $curl_error );
+        echo 'event: error' . "\n";
+        echo 'data: ' . json_encode( [ 'message' => 'Could not reach Anthropic: ' . $curl_error ] ) . "\n\n";
+        flush();
+        exit;
+    }
+
+    if ( ! cdc_is_valid_action_for_mode( $action_data, $conversation_mode ) ) {
+        $action_data = [
+            'action'  => 'clarify',
+            'message' => 'I lost the draft for that change. Please describe it again in one sentence and I’ll redo it cleanly.',
+        ];
+        $full_text = $action_data['message'];
+    }
+
+    cdc_slog( 'Stream complete — tokens in=' . $input_tokens . ' out=' . $output_tokens . ' mode=' . $conversation_mode );
+
+    $updated_history = $clean_history;
+    if ( $conversation_mode !== 'apply_pending' ) {
+        $updated_history[] = [ 'role' => 'user', 'content' => $message ];
+    }
+
+    $assistant_history_text = cdc_history_text_from_action( $action_data, $full_text );
+    if ( '' !== $assistant_history_text ) {
+        $updated_history[] = [ 'role' => 'assistant', 'content' => $assistant_history_text ];
+    }
+
+    $clean_history   = cdc_clean_history( $updated_history );
+    $pending_payload = cdc_build_pending_action( $message, $action_data, $full_text );
 }
-
-cdc_slog( 'Stream complete — tokens in=' . $input_tokens . ' out=' . $output_tokens . ' mode=' . $conversation_mode );
-
-$updated_history = $clean_history;
-if ( $conversation_mode !== 'apply_pending' ) {
-    $updated_history[] = [ 'role' => 'user', 'content' => $message ];
-}
-
-$assistant_history_text = cdc_history_text_from_action( $action_data, $full_text );
-if ( '' !== $assistant_history_text ) {
-    $updated_history[] = [ 'role' => 'assistant', 'content' => $assistant_history_text ];
-}
-
-$clean_history   = cdc_clean_history( $updated_history );
-$pending_payload = cdc_build_pending_action( $message, $action_data, $full_text );
 
 $report_action  = 'chat';
 $report_summary = substr( $assistant_history_text !== '' ? $assistant_history_text : $full_text, 0, 80 );
@@ -737,8 +745,6 @@ if ( $apply_result !== null && $apply_result !== '' ) {
     cdc_write_content( $page_id, $field, $apply_result );
     $action_data['page_url'] = get_permalink( $page_id ) ?: '';
 }
-
-cdc_done:
 
 // Step 5: Report usage to MasterDesk
 if ( $session_token !== '' && $endpoint !== '' ) {
