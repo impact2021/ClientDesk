@@ -109,7 +109,7 @@ function cdc_clean_for_claude( $html ) {
 
 function cdc_parse_action( string $response ): ?array {
     $trimmed = trim( $response );
-    if ( $trimmed !== '' && $trimmed[0] === '{' ) {
+    if ( substr( $trimmed, 0, 1 ) === '{' ) {
         $data = json_decode( $trimmed, true );
         if ( is_array( $data ) && isset( $data['action'] ) ) return $data;
     }
@@ -129,6 +129,14 @@ function cdc_history_entry( string $role, string $content ): ?array {
     return [ 'role' => $role, 'content' => $content ];
 }
 
+function cdc_is_truncated_code_block( string $content, ?array $action = null ): bool {
+    if ( $action ) {
+        return false;
+    }
+    return substr_count( $content, '```' ) % 2 === 1
+        && preg_match( '/```(?:json|html|css|php|javascript)?/i', $content );
+}
+
 function cdc_clean_history( array $history, int $max_turns = 8 ): array {
     $clean_history = [];
     foreach ( $history as $turn ) {
@@ -144,7 +152,7 @@ function cdc_clean_history( array $history, int $max_turns = 8 ): array {
                 $content = (string) ( $action['message'] ?? $action['summary'] ?? '' );
             }
             // Drop obviously truncated assistant code-block replies so they do not poison the next model turn.
-            if ( ! $action && substr_count( $content, '```' ) % 2 === 1 && preg_match( '/```(?:json|html|css|php|javascript)?/i', $content ) ) {
+            if ( cdc_is_truncated_code_block( $content, $action ) ) {
                 continue;
             }
         }
@@ -253,7 +261,7 @@ function cdc_stream_claude( string $api_key, array $payload, bool $emit_tokens =
                     if ( $token !== '' ) {
                         $full_text .= $token;
                         $trimmed_text = ltrim( $full_text );
-                        if ( $emit_tokens && $trimmed_text !== '' && $trimmed_text[0] !== '{' ) {
+                        if ( $emit_tokens && $trimmed_text !== '' && substr( $trimmed_text, 0, 1 ) !== '{' ) {
                             echo 'event: token' . "\n";
                             echo 'data: ' . json_encode( [ 'text' => $token ] ) . "\n\n";
                             if ( ob_get_level() > 0 ) ob_flush();

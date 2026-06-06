@@ -1766,12 +1766,13 @@ final class ClientDesk {
 
             function isImageIntent(text) {
                 var t = text.toLowerCase();
+                var imageAsset = '(?:image|photo|picture|logo|hero image|banner image|background image)';
                 if (/\b(color|colour|text|style|layout|spacing|align|alignment|center|centre|cropp?ed|cut off|size)\b/.test(t)
                     && !/\b(upload|add|insert|replace|swap|switch|use)\b/.test(t)) {
                     return false;
                 }
-                return /\b(swap|replace|switch)\b.{0,80}\b(image|photo|picture|logo|hero image|banner image|background image)\b/.test(t)
-                    || /\b(image|photo|picture|logo|hero image|banner image|background image)\b.{0,80}\b(swap|replace|switch)\b/.test(t)
+                return new RegExp('\\b(?:swap|replace|switch)\\b.{0,80}\\b' + imageAsset + '\\b').test(t)
+                    || new RegExp('\\b' + imageAsset + '\\b.{0,80}\\b(?:swap|replace|switch)\\b').test(t)
                     || /\b(add|insert|upload|use)\b.{0,80}\b(image|photo|picture|logo)\b/.test(t)
                     || /\b(hero image|background image|banner image|logo)\b.{0,80}\b(update|replace|swap)\b/.test(t);
             }
@@ -1779,9 +1780,8 @@ final class ClientDesk {
             function isApprovalMessage(text) {
                 var t = (text || '').trim().toLowerCase();
                 if (/\b(but|wait|hold|not|instead|first)\b/.test(t)) return false;
-                return /^(yes|yeah|yep|ok|okay|go ahead|do it|please do|proceed|apply it|looks good)[.!]?$/i.test(t)
-                    || /^yes[, ]/i.test(t)
-                    || /^go ahead[, ]/i.test(t);
+                return /^(?:yes|yeah|yep|ok|okay)(?:[,!]?\s+go ahead)?[.!]?$/i.test(t)
+                    || /^(?:go ahead|do it|please do|proceed|apply it|looks good)[.!]?$/i.test(t);
             }
 
             function clearConfirmRow() {
