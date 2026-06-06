@@ -109,7 +109,7 @@ function cdc_clean_for_claude( $html ) {
 
 function cdc_parse_action( string $response ): ?array {
     $trimmed = trim( $response );
-    if ( substr( $trimmed, 0, 1 ) === '{' ) {
+    if ( cdc_is_json_response( $trimmed ) ) {
         $data = json_decode( $trimmed, true );
         if ( is_array( $data ) && isset( $data['action'] ) ) return $data;
     }
@@ -129,12 +129,16 @@ function cdc_history_entry( string $role, string $content ): ?array {
     return [ 'role' => $role, 'content' => $content ];
 }
 
+function cdc_is_json_response( string $text ): bool {
+    return substr( ltrim( $text ), 0, 1 ) === '{';
+}
+
 function cdc_is_truncated_code_block( string $content, ?array $action = null ): bool {
     if ( $action ) {
         return false;
     }
-    return substr_count( $content, '```' ) % 2 === 1
-        && preg_match( '/```(?:json|html|css|php|javascript)?/i', $content );
+    $fence_openers = preg_match_all( '/```(?:json|html|css|php|javascript)?/i', $content, $matches );
+    return $fence_openers === 1 && substr_count( $content, '```' ) === 1;
 }
 
 function cdc_clean_history( array $history, int $max_turns = 8 ): array {
@@ -261,7 +265,7 @@ function cdc_stream_claude( string $api_key, array $payload, bool $emit_tokens =
                     if ( $token !== '' ) {
                         $full_text .= $token;
                         $trimmed_text = ltrim( $full_text );
-                        if ( $emit_tokens && $trimmed_text !== '' && substr( $trimmed_text, 0, 1 ) !== '{' ) {
+                        if ( $emit_tokens && $trimmed_text !== '' && ! cdc_is_json_response( $trimmed_text ) ) {
                             echo 'event: token' . "\n";
                             echo 'data: ' . json_encode( [ 'text' => $token ] ) . "\n\n";
                             if ( ob_get_level() > 0 ) ob_flush();

@@ -1767,7 +1767,7 @@ final class ClientDesk {
             function isImageIntent(text) {
                 var t = text.toLowerCase();
                 var imageAsset = '(?:image|photo|picture|logo|hero image|banner image|background image)';
-                if (/\b(color|colour|text|style|layout|spacing|align|alignment|center|centre|cropp?ed|cut off|size)\b/.test(t)
+                if (/\b(color|colour|text|style|layout|spacing|align|alignment|center|centre|cropp?ed|cut\s+off|size)\b/.test(t)
                     && !/\b(upload|add|insert|replace|swap|switch|use)\b/.test(t)) {
                     return false;
                 }
@@ -1780,8 +1780,8 @@ final class ClientDesk {
             function isApprovalMessage(text) {
                 var t = (text || '').trim().toLowerCase();
                 if (/\b(but|wait|hold|not|instead|first)\b/.test(t)) return false;
-                return /^(?:yes|yeah|yep|ok|okay)(?:[,!]?\s+go ahead)?[.!]?$/i.test(t)
-                    || /^(?:go ahead|do it|please do|proceed|apply it|looks good)[.!]?$/i.test(t);
+                return /^(?:yes|yeah|yep|ok|okay)(?:[,!]?\s+go ahead)?[.!]?$/.test(t)
+                    || /^(?:go ahead|do it|please do|proceed|apply it|looks good)[.!]?$/.test(t);
             }
 
             function clearConfirmRow() {
