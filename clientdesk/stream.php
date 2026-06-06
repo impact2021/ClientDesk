@@ -109,7 +109,7 @@ function cdc_clean_for_claude( $html ) {
 
 function cdc_parse_action( string $response ): ?array {
     $trimmed = trim( $response );
-    if ( isset( $trimmed[0] ) && $trimmed[0] === '{' ) {
+    if ( $trimmed !== '' && $trimmed[0] === '{' ) {
         $data = json_decode( $trimmed, true );
         if ( is_array( $data ) && isset( $data['action'] ) ) return $data;
     }
@@ -143,8 +143,8 @@ function cdc_clean_history( array $history, int $max_turns = 8 ): array {
             if ( is_array( $action ) ) {
                 $content = (string) ( $action['message'] ?? $action['summary'] ?? '' );
             }
-            // Drop obviously truncated assistant replies so they do not poison the next model turn.
-            if ( ! $action && substr_count( $content, '```' ) % 2 === 1 ) {
+            // Drop obviously truncated assistant code-block replies so they do not poison the next model turn.
+            if ( ! $action && substr_count( $content, '```' ) % 2 === 1 && preg_match( '/```(?:json|html|css|php|javascript)?/i', $content ) ) {
                 continue;
             }
         }
@@ -253,7 +253,7 @@ function cdc_stream_claude( string $api_key, array $payload, bool $emit_tokens =
                     if ( $token !== '' ) {
                         $full_text .= $token;
                         $trimmed_text = ltrim( $full_text );
-                        if ( $emit_tokens && $trimmed_text !== '' && ( ! isset( $trimmed_text[0] ) || $trimmed_text[0] !== '{' ) ) {
+                        if ( $emit_tokens && $trimmed_text !== '' && $trimmed_text[0] !== '{' ) {
                             echo 'event: token' . "\n";
                             echo 'data: ' . json_encode( [ 'text' => $token ] ) . "\n\n";
                             if ( ob_get_level() > 0 ) ob_flush();
@@ -454,6 +454,7 @@ if ( $font_heading || $font_body ) {
     $font_context .= "Always use these font names in any CSS you write — never substitute or invent alternatives.\n";
 }
 
+$need_image_rule = 'Use need_image only when the user explicitly asks to upload, add, swap, or replace an image file. Do not use need_image for CSS, alignment, cropping, spacing, or layout fixes around existing images.';
 $skip_apply = false;
 
 if ( $conversation_mode === 'apply_pending' ) {
@@ -548,7 +549,7 @@ Rules:
 - Never output HTML in this mode
 - Never output CSS examples or code fences
 - Keep confirm and clarify messages brief
-- Use need_image only for actual image add/replace requests, not for layout or styling fixes around existing images
+- {$need_image_rule}
 PROMPT;
     $messages   = $clean_history;
     $messages[] = [ 'role' => 'user', 'content' => $message ];
@@ -573,7 +574,7 @@ Rules:
 - Never include code fences, CSS snippets, or HTML examples in confirm or clarify messages
 - Quote the current text only when the user is changing text
 - Keep confirm messages brief and specific
-- Use need_image only for actual image add/replace requests, not for layout or styling fixes around existing images
+- {$need_image_rule}
 
 ## Current page HTML
 ```html
