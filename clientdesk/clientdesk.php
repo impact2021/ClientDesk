@@ -1545,6 +1545,8 @@ final class ClientDesk {
             var history = [], currentPageId = 0, currentField = 'body', busy = false;
             var pageImages = []; // [{src, alt}] cache for current page
             var lastSeoScore = {}; // cache of current score for suggestion filtering
+            var pendingAction = null;
+            var confirmRow = null;
 
             // ---------------------------------------------------------------
             // New page creation panel
@@ -1719,6 +1721,7 @@ final class ClientDesk {
                 if (!newSrc) return;
                 if (!currentPageId) { alert('Please select a page first.'); return; }
 
+                clearPendingAction();
                 setInputState(false);
                 var typing = addTyping();
 
@@ -1763,9 +1766,32 @@ final class ClientDesk {
 
             function isImageIntent(text) {
                 var t = text.toLowerCase();
-                return /\b(swap|change|replace|update|switch)\b.*\b(image|photo|picture|banner|hero|bg|background)\b/.test(t)
-                    || /\b(image|photo|picture|banner|hero)\b.*\b(swap|change|replace|update|switch)\b/.test(t)
-                    || /\bnew (image|photo|picture)\b/.test(t);
+                var imageAsset = '(?:image|photo|picture|logo|hero image|banner image|background image)';
+                if (/\b(color|colour|text|style|layout|spacing|align|alignment|center|centre|cropp?ed|cut\s+off|size)\b/.test(t)
+                    && !/\b(upload|add|insert|replace|swap|switch|use)\b/.test(t)) {
+                    return false;
+                }
+                return new RegExp('\\b(?:swap|replace|switch)\\b.{0,80}\\b' + imageAsset + '\\b').test(t)
+                    || new RegExp('\\b' + imageAsset + '\\b.{0,80}\\b(?:swap|replace|switch)\\b').test(t)
+                    || /\b(add|insert|upload|use)\b.{0,80}\b(image|photo|picture|logo)\b/.test(t)
+                    || /\b(hero image|background image|banner image|logo)\b.{0,80}\b(update|replace|swap)\b/.test(t);
+            }
+
+            function isApprovalMessage(text) {
+                var t = (text || '').trim().toLowerCase();
+                if (/\b(but|wait|hold|not|instead|first)\b/.test(t)) return false;
+                return /^(?:yes|yeah|yep|ok|okay)(?:[,!]?\s+go ahead)?[.!]?$/.test(t)
+                    || /^(?:go ahead|do it|please do|proceed|apply it|looks good)[.!]?$/.test(t);
+            }
+
+            function clearConfirmRow() {
+                if (confirmRow && confirmRow.parentNode) confirmRow.parentNode.removeChild(confirmRow);
+                confirmRow = null;
+            }
+
+            function clearPendingAction() {
+                pendingAction = null;
+                clearConfirmRow();
             }
 
             // ---------------------------------------------------------------
@@ -1821,6 +1847,7 @@ final class ClientDesk {
                 currentPageId=parseInt(this.value)||0;
                 history=[];
                 lastSeoScore={};
+                clearPendingAction();
                 var name=this.options[this.selectedIndex].text.replace(/^[\u2b06\u2b07]\s*/,'');
                 currentField=currentPageId===-1?'header':currentPageId===-2?'footer':'body';
                 closeImagePicker();
@@ -2191,45 +2218,46 @@ final class ClientDesk {
             // Confirmation buttons
             // ---------------------------------------------------------------
 
-            function isConfirmationQuestion(text) {
-                var t = text.toLowerCase();
-                return t.indexOf('shall i go ahead') !== -1
-                    || t.indexOf('shall i proceed') !== -1
-                    || t.indexOf('want me to go ahead') !== -1
-                    || t.indexOf('would you like me to') !== -1
-                    || t.indexOf('ready to proceed') !== -1
-                    || t.indexOf('good to go ahead') !== -1
-                    || /shall i (build|create|add|update|change|remove|replace|make)\b/.test(t);
-            }
-
             function addConfirmButtons() {
+                clearConfirmRow();
+                if (!pendingAction) return;
                 var row = document.createElement('div');
                 row.className = 'cd-confirm-row';
                 var yesBtn = document.createElement('button'); yesBtn.className='cd-btn-yes'; yesBtn.textContent='\u2713 Yes, go ahead';
-                yesBtn.onclick = function() { row.remove(); send('Yes, go ahead.'); };
+                yesBtn.onclick = function() { send('Yes, go ahead.', { conversationMode:'apply_pending', pendingAction: pendingAction }); };
                 var noBtn = document.createElement('button'); noBtn.className='cd-btn-no'; noBtn.textContent='\u2717 No, I want to change my request';
                 noBtn.onclick = function() {
-                    row.remove(); input.placeholder='What would you like to change?'; input.focus();
+                    clearPendingAction(); input.placeholder='What would you like to change?'; input.focus();
                     input.addEventListener('input', function r() { input.placeholder='Type a change\u2026'; input.removeEventListener('input',r); });
                 };
-                row.appendChild(yesBtn); row.appendChild(noBtn); chat.appendChild(row); scrollBottom();
+                row.appendChild(yesBtn); row.appendChild(noBtn); chat.appendChild(row); confirmRow=row; scrollBottom();
             }
 
             // ---------------------------------------------------------------
             // Main send — intercepts image intent before hitting AI
             // ---------------------------------------------------------------
 
-            function send(msgOverride) {
+            function send(msgOverride, options) {
+                options = options || {};
                 if(busy)return;
                 var message=msgOverride||input.value.trim(); if(!message)return;
                 if(!currentPageId){alert('Please select a page first.');return;}
+                var pendingForApply = options.pendingAction || pendingAction;
+                var isApplyMode = options.conversationMode === 'apply_pending' || (!!pendingForApply && isApprovalMessage(message));
 
                 // Image intent: show picker instead of sending to AI
-                if(!msgOverride && isImageIntent(message)) {
+                if(!msgOverride && !isApplyMode && isImageIntent(message)) {
+                    clearPendingAction();
                     addBubble('user', null, message);
                     input.value=''; input.style.height='auto';
                     openImagePicker();
                     return;
+                }
+
+                if(isApplyMode) {
+                    clearConfirmRow();
+                } else {
+                    clearPendingAction();
                 }
 
                 addBubble('user',null,message); if(!msgOverride)input.value=''; input.style.height='auto'; setInputState(false);
@@ -2244,6 +2272,10 @@ final class ClientDesk {
                 params.append('field',   currentField);
                 params.append('message', message);
                 params.append('history', JSON.stringify(history));
+                params.append('conversation_mode', isApplyMode ? 'apply_pending' : 'chat');
+                if (isApplyMode && pendingForApply) {
+                    params.append('pending_action', JSON.stringify(pendingForApply));
+                }
                 if (localApiKey) {
                     params.append('local_api_key', localApiKey);
                 }
@@ -2285,9 +2317,10 @@ final class ClientDesk {
                                     addBubble('cd','ERROR',data.message||'Something went wrong.'); setInputState(true);
 
                                 }else if(eventType==='done'){
-                                    streamEnded=true; typing.remove(); history=data.history||history;
+                                    streamEnded=true; typing.remove(); history=data.history||history; pendingAction=data.pending_action||null;
 
                                     if(data.action&&(data.action.action==='apply'||data.action.action==='patch'||data.action.action==='insert')){
+                                        clearPendingAction();
                                         if(streamBubble)streamBubble.remove();
                                         var summary=data.action.summary||'Done';
                                         var extra=null;
@@ -2310,20 +2343,38 @@ final class ClientDesk {
                                     }
 
                                     if(data.action&&data.action.action==='need_image'){
+                                        pendingAction=null; clearConfirmRow();
                                         if(streamBubble)streamBubble.remove();
                                         addBubble('cd','IMAGE',data.action.message||'Please select an image.');
                                         openImagePicker();
                                         setInputState(true); return;
                                     }
 
+                                    if(data.action&&data.action.action==='confirm'){
+                                        if(streamBubble)streamBubble.remove();
+                                        addBubble('cd','CLIENTDESK',data.action.message||data.raw||'');
+                                        updateUsage(data.spent_fmt,data.budget_fmt,data.remaining_fmt,data.show_warning,data.contact_phone,data.contact_email);
+                                        addConfirmButtons();
+                                        setInputState(true); return;
+                                    }
+
+                                    if(data.action&&data.action.action==='clarify'){
+                                        clearPendingAction();
+                                        if(streamBubble)streamBubble.remove();
+                                        addBubble('cd','CLIENTDESK',data.action.message||data.raw||'');
+                                        updateUsage(data.spent_fmt,data.budget_fmt,data.remaining_fmt,data.show_warning,data.contact_phone,data.contact_email);
+                                        setInputState(true); return;
+                                    }
+
                                     if(data.action&&data.action.action==='update_meta'){
+                                        clearPendingAction();
                                         if(streamBubble)streamBubble.remove();
                                         applyMetaUpdate(data.action,data); return;
                                     }
 
+                                    clearPendingAction();
                                     if(!streamBubble)addBubble('cd','CLIENTDESK',data.raw||'');
                                     updateUsage(data.spent_fmt,data.budget_fmt,data.remaining_fmt,data.show_warning,data.contact_phone,data.contact_email);
-                                    if(isConfirmationQuestion(streamText||data.raw||''))addConfirmButtons();
                                     setInputState(true);
                                 }
                             }

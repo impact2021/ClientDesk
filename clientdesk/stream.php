@@ -57,11 +57,20 @@ if ( ! $user_id || ! user_can( (int) $user_id, 'edit_pages' ) ) {
 }
 
 // Params
-$page_id = isset( $_POST['page_id'] ) ? (int) $_POST['page_id'] : 0;
-$field   = isset( $_POST['field'] )   ? sanitize_key( wp_unslash( $_POST['field'] ) ) : 'body';
-$message = isset( $_POST['message'] ) ? sanitize_textarea_field( wp_unslash( $_POST['message'] ) ) : '';
-$history = isset( $_POST['history'] ) ? json_decode( wp_unslash( $_POST['history'] ), true ) : [];
+$page_id           = isset( $_POST['page_id'] ) ? (int) $_POST['page_id'] : 0;
+$field             = isset( $_POST['field'] )   ? sanitize_key( wp_unslash( $_POST['field'] ) ) : 'body';
+$message           = isset( $_POST['message'] ) ? sanitize_textarea_field( wp_unslash( $_POST['message'] ) ) : '';
+$history           = isset( $_POST['history'] ) ? json_decode( wp_unslash( $_POST['history'] ), true ) : [];
+$conversation_mode = isset( $_POST['conversation_mode'] ) ? sanitize_key( wp_unslash( $_POST['conversation_mode'] ) ) : 'chat';
+$pending_action    = isset( $_POST['pending_action'] ) ? json_decode( wp_unslash( $_POST['pending_action'] ), true ) : [];
 $local_api_key = isset( $_POST['local_api_key'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['local_api_key'] ) ) ) : '';
+
+if ( ! in_array( $conversation_mode, [ 'chat', 'apply_pending' ], true ) ) {
+    $conversation_mode = 'chat';
+}
+if ( ! is_array( $pending_action ) ) {
+    $pending_action = [];
+}
 
 if ( ! $page_id || ! $message ) {
     header( 'Content-Type: text/event-stream' );
@@ -96,6 +105,203 @@ function cdc_clean_for_claude( $html ) {
     $html = preg_replace( '/<script[^>]*>[\s\S]*?<\/script>/i', '', $html );
     $html = preg_replace( '/<!--[\s\S]*?-->/', '', $html );
     return trim( $html );
+}
+
+function cdc_parse_action( string $response ): ?array {
+    $trimmed = trim( $response );
+    if ( cdc_is_json_response( $trimmed ) ) {
+        $data = json_decode( $trimmed, true );
+        if ( is_array( $data ) && isset( $data['action'] ) ) return $data;
+    }
+    if ( preg_match( '/```(?:json)?\s*(\{.*?\})\s*```/s', $trimmed, $m ) ) {
+        $data = json_decode( $m[1], true );
+        if ( is_array( $data ) && isset( $data['action'] ) ) return $data;
+    }
+    return null;
+}
+
+function cdc_history_entry( string $role, string $content ): ?array {
+    $role    = in_array( $role, [ 'user', 'assistant' ], true ) ? $role : '';
+    $content = trim( $content );
+    if ( '' === $role || '' === $content ) {
+        return null;
+    }
+    return [ 'role' => $role, 'content' => $content ];
+}
+
+function cdc_is_json_response( string $text ): bool {
+    return substr( ltrim( $text ), 0, 1 ) === '{';
+}
+
+function cdc_is_truncated_code_block( string $content, ?array $action = null ): bool {
+    if ( $action ) {
+        return false;
+    }
+    $fence_openers = preg_match_all( '/```(?:json|html|css|php|javascript)?/i', $content, $matches );
+    return $fence_openers === 1 && substr_count( $content, '```' ) === 1;
+}
+
+function cdc_clean_history( array $history, int $max_turns = 8 ): array {
+    $clean_history = [];
+    foreach ( $history as $turn ) {
+        $role    = isset( $turn['role'] ) ? sanitize_text_field( $turn['role'] ) : '';
+        $content = isset( $turn['content'] ) ? (string) $turn['content'] : '';
+        if ( ! in_array( $role, [ 'user', 'assistant' ], true ) || '' === trim( $content ) ) {
+            continue;
+        }
+
+        if ( $role === 'assistant' ) {
+            $action = cdc_parse_action( $content );
+            if ( is_array( $action ) ) {
+                $content = (string) ( $action['message'] ?? $action['summary'] ?? '' );
+            }
+            // Drop obviously truncated assistant code-block replies so they do not poison the next model turn.
+            if ( cdc_is_truncated_code_block( $content, $action ) ) {
+                continue;
+            }
+        }
+
+        $entry = cdc_history_entry( $role, $content );
+        if ( $entry ) {
+            $clean_history[] = $entry;
+        }
+    }
+
+    if ( count( $clean_history ) > $max_turns ) {
+        $clean_history = array_slice( $clean_history, -$max_turns );
+    }
+
+    return $clean_history;
+}
+
+function cdc_clean_pending_action( array $pending_action ): array {
+    $user_message      = isset( $pending_action['user_message'] ) ? sanitize_textarea_field( (string) $pending_action['user_message'] ) : '';
+    $assistant_message = isset( $pending_action['assistant_message'] ) ? sanitize_textarea_field( (string) $pending_action['assistant_message'] ) : '';
+    if ( '' === $user_message || '' === $assistant_message ) {
+        return [];
+    }
+    return [
+        'user_message'      => $user_message,
+        'assistant_message' => $assistant_message,
+    ];
+}
+
+function cdc_is_valid_action_for_mode( ?array $action_data, string $conversation_mode ): bool {
+    if ( ! is_array( $action_data ) || empty( $action_data['action'] ) ) {
+        return false;
+    }
+
+    $action = (string) $action_data['action'];
+    if ( $conversation_mode === 'apply_pending' ) {
+        return in_array( $action, [ 'patch', 'insert', 'update_meta', 'apply' ], true );
+    }
+
+    return in_array( $action, [ 'confirm', 'clarify', 'need_image' ], true );
+}
+
+function cdc_history_text_from_action( ?array $action_data, string $full_text ): string {
+    if ( ! is_array( $action_data ) ) {
+        return trim( $full_text );
+    }
+
+    $action = (string) ( $action_data['action'] ?? '' );
+    if ( in_array( $action, [ 'confirm', 'clarify', 'need_image' ], true ) ) {
+        return trim( (string) ( $action_data['message'] ?? '' ) );
+    }
+    if ( $action === 'update_meta' ) {
+        return trim( (string) ( $action_data['value'] ?? 'Meta updated.' ) );
+    }
+    if ( in_array( $action, [ 'patch', 'insert', 'apply' ], true ) ) {
+        return trim( (string) ( $action_data['summary'] ?? 'Change applied.' ) );
+    }
+
+    return trim( $full_text );
+}
+
+function cdc_build_pending_action( string $user_message, ?array $action_data, string $full_text ): ?array {
+    if ( ! is_array( $action_data ) || ( $action_data['action'] ?? '' ) !== 'confirm' ) {
+        return null;
+    }
+
+    $assistant_message = trim( (string) ( $action_data['message'] ?? $full_text ) );
+    $user_message      = trim( $user_message );
+    if ( '' === $assistant_message || '' === $user_message ) {
+        return null;
+    }
+
+    return [
+        'user_message'      => $user_message,
+        'assistant_message' => $assistant_message,
+    ];
+}
+
+function cdc_stream_claude( string $api_key, array $payload, bool $emit_tokens = false ): array {
+    $full_text     = '';
+    $input_tokens  = 0;
+    $output_tokens = 0;
+    $last_ping     = time();
+
+    $ch = curl_init( 'https://api.anthropic.com/v1/messages' );
+    curl_setopt_array( $ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => wp_json_encode( $payload ),
+        CURLOPT_HTTPHEADER     => [
+            'x-api-key: '         . $api_key,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_TIMEOUT        => 60,
+        CURLOPT_RETURNTRANSFER => false,
+        CURLOPT_WRITEFUNCTION  => function( $ch, $chunk ) use ( &$full_text, &$input_tokens, &$output_tokens, &$last_ping, $emit_tokens ) {
+            $lines = explode( "\n", $chunk );
+            foreach ( $lines as $line ) {
+                $line = trim( $line );
+                if ( strpos( $line, 'data: ' ) !== 0 ) continue;
+                $json = json_decode( substr( $line, 6 ), true );
+                if ( ! is_array( $json ) ) continue;
+                $type = $json['type'] ?? '';
+                if ( $type === 'content_block_delta' ) {
+                    $token = $json['delta']['text'] ?? '';
+                    if ( $token !== '' ) {
+                        $full_text .= $token;
+                        $trimmed_text = ltrim( $full_text );
+                        if ( $emit_tokens && $trimmed_text !== '' && ! cdc_is_json_response( $trimmed_text ) ) {
+                            echo 'event: token' . "\n";
+                            echo 'data: ' . json_encode( [ 'text' => $token ] ) . "\n\n";
+                            if ( ob_get_level() > 0 ) ob_flush();
+                            flush();
+                        } else {
+                            $now = time();
+                            if ( $now - $last_ping >= 8 ) {
+                                echo ": ping\n\n";
+                                if ( ob_get_level() > 0 ) ob_flush();
+                                flush();
+                                $last_ping = $now;
+                            }
+                        }
+                    }
+                } elseif ( $type === 'message_delta' ) {
+                    $output_tokens = $json['usage']['output_tokens'] ?? $output_tokens;
+                } elseif ( $type === 'message_start' ) {
+                    $input_tokens = $json['message']['usage']['input_tokens'] ?? 0;
+                }
+            }
+            return strlen( $chunk );
+        },
+    ] );
+
+    curl_exec( $ch );
+    $curl_error = curl_error( $ch );
+    $curl_errno = curl_errno( $ch );
+    curl_close( $ch );
+
+    return [
+        'full_text'     => $full_text,
+        'input_tokens'  => $input_tokens,
+        'output_tokens' => $output_tokens,
+        'curl_error'    => $curl_error,
+        'curl_errno'    => $curl_errno,
+    ];
 }
 
 // Apply patch action — find/replace pairs in the stored HTML
@@ -247,8 +453,10 @@ if ( $local_api_key !== '' ) {
 cdc_slog( 'Token received — streaming directly to Anthropic' );
 
 // Step 2: Build prompt and stream
-$cleaned_html = cdc_clean_for_claude( $page_html );
-$is_blank     = '' === trim( $cleaned_html );
+$cleaned_html   = cdc_clean_for_claude( $page_html );
+$is_blank       = '' === trim( $cleaned_html );
+$clean_history  = cdc_clean_history( is_array( $history ) ? $history : [] );
+$pending_action = cdc_clean_pending_action( $pending_action );
 
 $font_context = '';
 if ( $font_heading || $font_body ) {
@@ -258,99 +466,136 @@ if ( $font_heading || $font_body ) {
     $font_context .= "Always use these font names in any CSS you write — never substitute or invent alternatives.\n";
 }
 
-if ( $is_blank ) {
-    $system = <<<PROMPT
-You are ClientDesk, an AI assistant that helps website owners build and update their website content.
+$need_image_rule = 'Use need_image only when the user explicitly asks to upload, add, swap, or replace an image file. Do not use need_image for CSS, alignment, cropping, spacing, or layout fixes around existing images.';
+$skip_apply = false;
 
-## Your context
-The user is building: "{$page_title}"
-This area currently has no HTML — you will be creating it from scratch.
+if ( $conversation_mode === 'apply_pending' ) {
+    if ( empty( $pending_action ) ) {
+        $action_data = [
+            'action'  => 'clarify',
+            'message' => 'I lost the draft for that change. Please describe it again in one sentence.',
+        ];
+        $full_text        = $action_data['message'];
+        $input_tokens     = 0;
+        $output_tokens    = 0;
+        $pending_payload  = null;
+        $report_action    = 'chat';
+        $report_summary   = $action_data['message'];
+        $apply_result     = null;
+        $clean_history[]  = [ 'role' => 'assistant', 'content' => $action_data['message'] ];
+        $skip_apply       = true;
+    }
+
+    if ( ! $skip_apply && $is_blank ) {
+        $system = <<<PROMPT
+You are ClientDesk, an AI assistant that helps website owners build website content from scratch.
+
+The user already approved a proposed new build for "{$page_title}".
+This area currently has no HTML.
 {$font_context}
-## Your conversation flow
+Return ONLY one JSON object and nothing else.
 
-**Step 1 — Outline and confirm**
-When the user describes what they want, respond with a brief bullet-point outline of what you'll build — structure, key elements, assumptions. Max 6 bullets. Ask: "Shall I go ahead and build this?"
+Allowed action:
+{"action":"apply","html":"[COMPLETE HTML]","summary":"[one plain English sentence]"}
 
-Do NOT write any HTML yet. Just the outline in plain text.
-
-If the request involves an image and no URL has been provided:
-{"action":"need_image","message":"[Plain English message asking them to select an image]"}
-
-When the user confirms, output the complete HTML wrapped exactly like this — nothing before or after:
-{"action":"apply","html":"[COMPLETE HTML]","summary":"[One plain English sentence — no technical terms]"}
-
-## Rules
-- Write clean semantic HTML with inline CSS or a <style> block
-- Mobile responsive — include media queries
-- Use CSS custom properties for colours
-- No lorem ipsum — use realistic content based on context
-- Never apply without confirmation
+Rules:
+- Do not ask follow-up questions
+- Do not reconfirm
+- Do not wrap the JSON in code fences
+- Write complete semantic HTML with any needed inline CSS or a <style> block
+- Make it mobile responsive
 PROMPT;
-} else {
-    $system = <<<PROMPT
-You are ClientDesk, an AI assistant that helps website owners update their website content.
+    } elseif ( ! $skip_apply ) {
+        $system = <<<PROMPT
+You are ClientDesk, an AI assistant that helps website owners update website content.
 
-## Your context
-The user is editing: "{$page_title}"
-The current full HTML is provided below — read it carefully.
+The user already approved a previously confirmed change for "{$page_title}".
+Apply that approved change now against the current HTML below.
 {$font_context}
-## Your conversation flow
+Return ONLY one JSON object and nothing else.
 
-**Step 1 — Understand and confirm**
-When the user describes a change, confirm exactly what you found and what you will change it to. Quote the current text if changing text. Be specific and brief. Ask for approval.
-
-If an image swap/add is needed and no URL provided:
-{"action":"need_image","message":"[Plain English — no technical terms]"}
-
-If you need clarification, ask in plain text.
-
-**Step 2 — Apply on approval**
-When the user confirms, respond with ONLY a JSON action — never return the full HTML.
-
-For changes to EXISTING content (text edits, colour changes, attribute updates, removing elements):
-{"action":"patch","patches":[{"find":"[exact verbatim substring from the HTML]","replace":"[replacement]"},{"find":"...","replace":"..."}],"summary":"[one plain English sentence]"}
-
-Rules for patches:
-- "find" MUST be copied verbatim from the HTML — exact characters, exact whitespace
-- "find" must be unique enough to match only one place — include surrounding tags if needed
-- Multiple patches allowed in one action
-- To remove something: set "replace" to ""
-
-For ADDING NEW content that doesn't exist yet:
+Allowed actions:
+{"action":"patch","patches":[{"find":"[exact verbatim substring from the HTML]","replace":"[replacement]"}],"summary":"[one plain English sentence]"}
 {"action":"insert","position":"after","anchor":"[exact unique string already in the HTML]","html":"[new HTML]","summary":"[one plain English sentence]"}
-
-For meta title/description — confirm value first, then:
 {"action":"update_meta","field":"meta_title","value":"the new title"}
 {"action":"update_meta","field":"meta_desc","value":"the new description"}
 
-**Step 3 — Follow up**
-After a change, offer to help further if useful.
-
-## Rules
-- Never apply without user confirmation
-- NEVER return the full HTML — only patch/insert/update_meta actions
-- Preserve all classes, IDs, structure unless asked to change them
-- Keep confirmation messages brief
+Rules:
+- Do not ask follow-up questions
+- Do not reconfirm
+- Do not explain your work
+- Do not wrap the JSON in code fences
+- Never return the full HTML
+- For patch actions, "find" must match the current HTML exactly
+- Preserve classes, IDs, and structure unless the approved change requires it
 
 ## Current page HTML
 ```html
 {$cleaned_html}
 ```
 PROMPT;
-}
-
-// Build history
-$clean_history = [];
-if ( is_array( $history ) ) {
-    foreach ( $history as $turn ) {
-        $role    = isset( $turn['role'] )    ? sanitize_text_field( $turn['role'] ) : '';
-        $content = isset( $turn['content'] ) ? (string) $turn['content']            : '';
-        if ( in_array( $role, [ 'user', 'assistant' ], true ) && '' !== $content ) {
-            $clean_history[] = [ 'role' => $role, 'content' => $content ];
-        }
     }
+
+    if ( ! $skip_apply ) {
+        $messages = [];
+        $messages[] = [ 'role' => 'user', 'content' => $pending_action['user_message'] ];
+        $messages[] = [ 'role' => 'assistant', 'content' => $pending_action['assistant_message'] ];
+        $messages[] = [ 'role' => 'user', 'content' => 'The user approved that exact change. Apply it now and return only the JSON action.' ];
+    }
+} elseif ( $is_blank ) {
+    $system = <<<PROMPT
+You are ClientDesk, an AI assistant that helps website owners build website content.
+
+## Your context
+The user is building: "{$page_title}"
+This area currently has no HTML.
+{$font_context}
+Return ONLY one JSON object and nothing else.
+
+Allowed actions:
+{"action":"confirm","message":"[brief bullet-style outline in plain English ending with: Shall I go ahead and build this?]"}
+{"action":"clarify","message":"[one short plain-English question asking for the missing detail]"}
+{"action":"need_image","message":"[plain English request to choose an image only if the user asked to add or replace an actual image asset]"}
+
+Rules:
+- Never output HTML in this mode
+- Never output CSS examples or code fences
+- Keep confirm and clarify messages brief
+- {$need_image_rule}
+PROMPT;
+    $messages   = $clean_history;
+    $messages[] = [ 'role' => 'user', 'content' => $message ];
+} else {
+    $system = <<<PROMPT
+You are ClientDesk, an AI assistant that helps website owners update website content.
+
+## Your context
+The user is editing: "{$page_title}"
+The current full HTML is provided below — read it carefully.
+{$font_context}
+Return ONLY one JSON object and nothing else.
+
+Allowed actions in this mode:
+{"action":"confirm","message":"[brief plain-English confirmation of the exact change you found and what you will change it to, ending with: Shall I go ahead?]"}
+{"action":"clarify","message":"[one short plain-English question asking for the missing detail]"}
+{"action":"need_image","message":"[plain English request to choose an image only if the user asked to add or replace an actual image asset]"}
+
+Rules:
+- Never apply the change in this mode
+- Never output patch, insert, update_meta, or full HTML in this mode
+- Never include code fences, CSS snippets, or HTML examples in confirm or clarify messages
+- Quote the current text only when the user is changing text
+- Keep confirm messages brief and specific
+- {$need_image_rule}
+
+## Current page HTML
+```html
+{$cleaned_html}
+```
+PROMPT;
+    $messages   = $clean_history;
+    $messages[] = [ 'role' => 'user', 'content' => $message ];
 }
-$clean_history[] = [ 'role' => 'user', 'content' => $message ];
 
 // SSE headers
 header( 'Content-Type: text/event-stream' );
@@ -358,108 +603,92 @@ header( 'Cache-Control: no-cache' );
 header( 'X-Accel-Buffering: no' );
 while ( ob_get_level() > 0 ) ob_end_clean();
 
-$post_body = json_encode( [
-    'model'      => $model,
-    'max_tokens' => 4000,
-    'stream'     => true,
-    'system'     => $system,
-    'messages'   => $clean_history,
-] );
+if ( ! $skip_apply ) {
+    $payload = [
+        'model'      => $model,
+        'max_tokens' => 4000,
+        'stream'     => true,
+        'system'     => $system,
+        'messages'   => $messages,
+    ];
 
-$full_text     = '';
-$input_tokens  = 0;
-$output_tokens = 0;
-$last_ping     = time();
+    $result        = cdc_stream_claude( $api_key, $payload, false );
+    $full_text     = $result['full_text'];
+    $input_tokens  = $result['input_tokens'];
+    $output_tokens = $result['output_tokens'];
+    $curl_error    = $result['curl_error'];
+    $curl_errno    = $result['curl_errno'];
 
-$ch = curl_init( 'https://api.anthropic.com/v1/messages' );
-curl_setopt_array( $ch, [
-    CURLOPT_POST           => true,
-    CURLOPT_POSTFIELDS     => $post_body,
-    CURLOPT_HTTPHEADER     => [
-        'x-api-key: '         . $api_key,
-        'anthropic-version: 2023-06-01',
-        'content-type: application/json',
-    ],
-    CURLOPT_TIMEOUT        => 60,
-    CURLOPT_RETURNTRANSFER => false,
-    CURLOPT_WRITEFUNCTION  => function( $ch, $chunk ) use ( &$full_text, &$input_tokens, &$output_tokens, &$last_ping ) {
-        $lines = explode( "\n", $chunk );
-        foreach ( $lines as $line ) {
-            $line = trim( $line );
-            if ( strpos( $line, 'data: ' ) !== 0 ) continue;
-            $json = json_decode( substr( $line, 6 ), true );
-            if ( ! is_array( $json ) ) continue;
-            $type = $json['type'] ?? '';
-            if ( $type === 'content_block_delta' ) {
-                $token = $json['delta']['text'] ?? '';
-                if ( $token !== '' ) {
-                    $full_text .= $token;
-                    if ( $full_text[0] !== '{' ) {
-                        echo 'event: token' . "\n";
-                        echo 'data: ' . json_encode( [ 'text' => $token ] ) . "\n\n";
-                        if ( ob_get_level() > 0 ) ob_flush();
-                        flush();
-                    } else {
-                        $now = time();
-                        if ( $now - $last_ping >= 8 ) {
-                            echo ": ping\n\n";
-                            if ( ob_get_level() > 0 ) ob_flush();
-                            flush();
-                            $last_ping = $now;
-                        }
-                    }
-                }
-            } elseif ( $type === 'message_delta' ) {
-                $output_tokens = $json['usage']['output_tokens'] ?? $output_tokens;
-            } elseif ( $type === 'message_start' ) {
-                $input_tokens = $json['message']['usage']['input_tokens'] ?? 0;
-            }
+    if ( $curl_errno ) {
+        cdc_slog( 'Anthropic cURL error ' . $curl_errno . ': ' . $curl_error );
+        echo 'event: error' . "\n";
+        echo 'data: ' . json_encode( [ 'message' => 'Could not reach Anthropic: ' . $curl_error ] ) . "\n\n";
+        flush();
+        exit;
+    }
+
+    if ( '' === $full_text ) {
+        echo 'event: error' . "\n";
+        echo 'data: ' . json_encode( [ 'message' => 'Claude returned an empty response.' ] ) . "\n\n";
+        flush();
+        exit;
+    }
+
+    $action_data = cdc_parse_action( $full_text );
+    if ( $conversation_mode === 'apply_pending' && ! cdc_is_valid_action_for_mode( $action_data, $conversation_mode ) ) {
+        $retry_payload               = $payload;
+        $retry_payload['messages'][] = [ 'role' => 'assistant', 'content' => $full_text ];
+        $retry_payload['messages'][] = [ 'role' => 'user', 'content' => 'That was invalid. Return only one JSON action right now. No prose, no code fences, no explanation.' ];
+
+        $retry_result = cdc_stream_claude( $api_key, $retry_payload, false );
+        $input_tokens += $retry_result['input_tokens'];
+        $output_tokens += $retry_result['output_tokens'];
+
+        if ( ! $retry_result['curl_errno'] && '' !== $retry_result['full_text'] ) {
+            $full_text    = $retry_result['full_text'];
+            $action_data  = cdc_parse_action( $full_text );
+            $curl_error   = $retry_result['curl_error'];
+            $curl_errno   = $retry_result['curl_errno'];
+        } else {
+            $curl_error = $retry_result['curl_error'];
+            $curl_errno = $retry_result['curl_errno'];
         }
-        return strlen( $chunk );
-    },
-] );
-
-curl_exec( $ch );
-$curl_error = curl_error( $ch );
-$curl_errno = curl_errno( $ch );
-curl_close( $ch );
-
-if ( $curl_errno ) {
-    cdc_slog( 'Anthropic cURL error ' . $curl_errno . ': ' . $curl_error );
-    echo 'event: error' . "\n";
-    echo 'data: ' . json_encode( [ 'message' => 'Could not reach Anthropic: ' . $curl_error ] ) . "\n\n";
-    flush();
-    exit;
-}
-
-if ( '' === $full_text ) {
-    echo 'event: error' . "\n";
-    echo 'data: ' . json_encode( [ 'message' => 'Claude returned an empty response.' ] ) . "\n\n";
-    flush();
-    exit;
-}
-
-cdc_slog( 'Stream complete — tokens in=' . $input_tokens . ' out=' . $output_tokens );
-
-// Step 3: Parse action
-function cdc_parse_action( string $response ): ?array {
-    $trimmed = trim( $response );
-    if ( str_starts_with( $trimmed, '{' ) ) {
-        $data = json_decode( $trimmed, true );
-        if ( is_array( $data ) && isset( $data['action'] ) ) return $data;
     }
-    if ( preg_match( '/```(?:json)?\s*(\{.*?\})\s*```/s', $trimmed, $m ) ) {
-        $data = json_decode( $m[1], true );
-        if ( is_array( $data ) && isset( $data['action'] ) ) return $data;
-    }
-    return null;
-}
 
-$action_data     = cdc_parse_action( $full_text );
-$clean_history[] = [ 'role' => 'assistant', 'content' => $full_text ];
+    if ( $curl_errno ) {
+        cdc_slog( 'Anthropic retry cURL error ' . $curl_errno . ': ' . $curl_error );
+        echo 'event: error' . "\n";
+        echo 'data: ' . json_encode( [ 'message' => 'Could not reach Anthropic: ' . $curl_error ] ) . "\n\n";
+        flush();
+        exit;
+    }
+
+    if ( ! cdc_is_valid_action_for_mode( $action_data, $conversation_mode ) ) {
+        $action_data = [
+            'action'  => 'clarify',
+            'message' => 'I lost the draft for that change. Please describe it again in one sentence and I’ll redo it cleanly.',
+        ];
+        $full_text = $action_data['message'];
+    }
+
+    cdc_slog( 'Stream complete — tokens in=' . $input_tokens . ' out=' . $output_tokens . ' mode=' . $conversation_mode );
+
+    $updated_history = $clean_history;
+    if ( $conversation_mode !== 'apply_pending' ) {
+        $updated_history[] = [ 'role' => 'user', 'content' => $message ];
+    }
+
+    $assistant_history_text = cdc_history_text_from_action( $action_data, $full_text );
+    if ( '' !== $assistant_history_text ) {
+        $updated_history[] = [ 'role' => 'assistant', 'content' => $assistant_history_text ];
+    }
+
+    $clean_history   = cdc_clean_history( $updated_history );
+    $pending_payload = cdc_build_pending_action( $message, $action_data, $full_text );
+}
 
 $report_action  = 'chat';
-$report_summary = substr( $full_text, 0, 80 );
+$report_summary = substr( $assistant_history_text !== '' ? $assistant_history_text : $full_text, 0, 80 );
 $apply_result   = null;
 
 // Step 4: Apply patch/insert actions server-side against the stored HTML
@@ -558,6 +787,7 @@ echo 'data: ' . json_encode( [
     'success'       => true,
     'raw'           => $full_text,
     'action'        => $action_data,
+    'pending_action'=> $pending_payload,
     'history'       => $clean_history,
     'spent_fmt'     => $spent_fmt,
     'budget_fmt'    => $budget_fmt,
