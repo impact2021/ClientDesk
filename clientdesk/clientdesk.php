@@ -3348,11 +3348,23 @@ final class ClientDesk {
     }
 
     private function css_font_stack( string $font ): string {
-        $font = trim( preg_replace( '/[^a-zA-Z0-9,\-\s\'"]/', '', $font ) ?? '' );
+        $font = trim( (string) preg_replace( '/[^a-zA-Z0-9,\-\s]/', '', $font ) );
         if ( $font === '' ) return 'sans-serif';
-        if ( str_contains( $font, ',' ) ) return $font;
-        if ( str_contains( $font, '\'' ) || str_contains( $font, '"' ) ) return $font;
-        return "'" . $font . "', sans-serif";
+
+        $generic = [ 'serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-sans-serif', 'ui-serif', 'ui-monospace', 'ui-rounded', 'emoji', 'math', 'fangsong' ];
+        $parts = array_filter( array_map( 'trim', explode( ',', $font ) ), static fn( $part ) => $part !== '' );
+        if ( empty( $parts ) ) return 'sans-serif';
+
+        $stack = [];
+        foreach ( $parts as $part ) {
+            if ( in_array( strtolower( $part ), $generic, true ) ) {
+                $stack[] = strtolower( $part );
+                continue;
+            }
+            $stack[] = "'" . str_replace( "'", "\\'", $part ) . "'";
+        }
+
+        return implode( ', ', $stack );
     }
 
     private function print_non_blocking_stylesheet( string $url, string $id = '' ): void {
@@ -3390,7 +3402,8 @@ final class ClientDesk {
     private function is_external_url( string $url ): bool {
         $url_host = parse_url( $url, PHP_URL_HOST );
         $site_host = parse_url( home_url(), PHP_URL_HOST );
-        if ( ! $url_host || ! $site_host ) return false;
+        if ( ! $site_host ) return false;
+        if ( ! $url_host ) return preg_match( '/^https?:\/\//i', trim( $url ) ) === 1;
         return strtolower( (string) $url_host ) !== strtolower( (string) $site_host );
     }
 
