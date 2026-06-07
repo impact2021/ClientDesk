@@ -3348,7 +3348,7 @@ final class ClientDesk {
     }
 
     private function css_font_stack( string $font ): string {
-        $font = trim( (string) preg_replace( '/[^a-zA-Z0-9,\-\s\']/', '', $font ) );
+        $font = trim( (string) preg_replace( '/[^a-zA-Z0-9,\-\s]/', '', $font ) );
         if ( $font === '' ) return 'sans-serif';
 
         $generic = [ 'serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-sans-serif', 'ui-serif', 'ui-monospace', 'ui-rounded', 'emoji', 'math', 'fangsong' ];
