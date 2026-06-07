@@ -3348,7 +3348,7 @@ final class ClientDesk {
     }
 
     private function css_font_stack( string $font ): string {
-        $font = trim( (string) preg_replace( '/[^a-zA-Z0-9,\-\s]/', '', $font ) );
+        $font = trim( (string) preg_replace( '/[^a-zA-Z0-9,\-\s\']/', '', $font ) );
         if ( $font === '' ) return 'sans-serif';
 
         $generic = [ 'serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-sans-serif', 'ui-serif', 'ui-monospace', 'ui-rounded', 'emoji', 'math', 'fangsong' ];
@@ -3403,7 +3403,7 @@ final class ClientDesk {
         $url_host = parse_url( $url, PHP_URL_HOST );
         $site_host = parse_url( home_url(), PHP_URL_HOST );
         if ( ! $site_host ) return false;
-        if ( ! $url_host ) return preg_match( '/^https?:\/\//i', trim( $url ) ) === 1;
+        if ( ! $url_host ) return preg_match( '/^https?:\/\/[^\/\s?#]+/i', trim( $url ) ) === 1;
         return strtolower( (string) $url_host ) !== strtolower( (string) $site_host );
     }
 
