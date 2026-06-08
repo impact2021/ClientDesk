@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.12
+ * Version: 2.9.13
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -18,7 +18,7 @@ $clientdesk_update_checker = YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::bu
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDC_VERSION', '2.9.12' );
+define( 'CDC_VERSION', '2.9.13' );
 define( 'CDC_URL',     plugin_dir_url( __FILE__ ) );
 define( 'CDC_PATH',    plugin_dir_path( __FILE__ ) );
 
@@ -47,6 +47,10 @@ final class ClientDesk {
     const OPT_DOMAIN       = 'cdc_domain';
     const OPT_FONT_HEADING = 'cdc_font_heading';
     const OPT_FONT_BODY    = 'cdc_font_body';
+    const OPT_FONT_SOURCE  = 'cdc_font_source';
+    const OPT_DEFER_GLOBAL_THIRD_PARTY_CSS = 'cdc_perf_defer_global_third_party_css';
+    const OPT_CONDITIONAL_FONTAWESOME_CSS  = 'cdc_perf_conditional_fontawesome_css';
+    const OPT_CONDITIONAL_FORMIDABLE_CSS   = 'cdc_perf_conditional_formidable_css';
     const OPT_COLOUR_PRIMARY   = 'iw_colour_primary';
     const OPT_COLOUR_SECONDARY = 'iw_colour_secondary';
     const OPT_COLOUR_LINK      = 'iw_colour_link';
@@ -80,6 +84,7 @@ final class ClientDesk {
             add_action( 'wp_head', [ $this, 'output_colours' ], 98 );
         }
         add_action( 'wp_enqueue_scripts',    [ $this, 'enqueue_frontend' ] );
+        add_action( 'wp_print_styles',       [ $this, 'optimize_frontend_styles' ], 999 );
         // CPT + menus
         add_action( 'init',                  [ $this, 'register_cpt' ] );
         add_action( 'admin_menu',            [ $this, 'register_menus' ] );
@@ -132,8 +137,9 @@ final class ClientDesk {
         // Google Fonts injection — builds URL from heading + body font settings
         $font_heading = trim( (string) get_option( self::OPT_FONT_HEADING, '' ) );
         $font_body    = trim( (string) get_option( self::OPT_FONT_BODY, '' ) );
+        $font_source  = $this->font_source();
 
-        if ( $font_heading || $font_body ) {
+        if ( 'google' === $font_source && ( $font_heading || $font_body ) ) {
             $families = [];
             if ( $font_heading ) $families[] = str_replace( ' ', '+', $font_heading ) . ':ital,wght@0,400;0,600;0,700;1,400';
             if ( $font_body && $font_body !== $font_heading ) $families[] = str_replace( ' ', '+', $font_body ) . ':ital,wght@0,400;0,500;0,600;1,400';
@@ -142,19 +148,24 @@ final class ClientDesk {
 
             echo '<link rel="preconnect" href="https://fonts.googleapis.com">' . "\n"; // phpcs:ignore
             echo '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' . "\n"; // phpcs:ignore
-            echo '<link rel="stylesheet" href="' . esc_url( $font_url ) . '">' . "\n"; // phpcs:ignore
-
+            $this->print_non_blocking_stylesheet( $font_url, 'cdc-google-fonts' );
         }
 
-        if ( $font_heading || $font_body ) {
-            echo '<style id="cdc-font-apply">' . "\n"; // phpcs:ignore
-            if ( $font_body ) {
-                $fb_css = esc_attr( $font_heading === $font_body ? $font_heading : $font_body );
-                echo 'body, p, li, td, input, select, textarea, button { font-family: \'' . $fb_css . '\', sans-serif !important; }' . "\n"; // phpcs:ignore
+        if ( $font_heading || $font_body || 'system' === $font_source ) {
+            $body_stack = '';
+            $heading_stack = '';
+            if ( 'system' === $font_source ) {
+                $body_stack = $font_body !== '' ? $font_body : "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+                $heading_stack = $font_heading !== '' ? $font_heading : "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
             }
-            if ( $font_heading ) {
-                $fh_css = esc_attr( $font_heading );
-                echo 'h1, h2, h3, h4, h5, h6 { font-family: \'' . $fh_css . '\', sans-serif !important; }' . "\n"; // phpcs:ignore
+            echo '<style id="cdc-font-apply">' . "\n"; // phpcs:ignore
+            if ( $font_body || $body_stack !== '' ) {
+                $fb_css = $this->css_font_stack( $body_stack !== '' ? $body_stack : ( $font_heading === $font_body ? $font_heading : $font_body ) );
+                echo 'body, p, li, td, input, select, textarea, button { font-family: ' . $fb_css . ' !important; }' . "\n"; // phpcs:ignore
+            }
+            if ( $font_heading || $heading_stack !== '' ) {
+                $fh_css = $this->css_font_stack( $heading_stack !== '' ? $heading_stack : $font_heading );
+                echo 'h1, h2, h3, h4, h5, h6 { font-family: ' . $fh_css . ' !important; }' . "\n"; // phpcs:ignore
             }
             echo '</style>' . "\n"; // phpcs:ignore
         }
@@ -162,7 +173,7 @@ final class ClientDesk {
         // Global scripts
         $global = (string) get_option( CDC_GLOBAL_SCRIPTS, '' );
         if ( '' !== trim( $global ) ) {
-            echo "\n" . $global . "\n"; // phpcs:ignore
+            echo "\n" . $this->defer_external_stylesheet_links( $global ) . "\n"; // phpcs:ignore
         }
     }
 
@@ -535,7 +546,7 @@ final class ClientDesk {
     // ---------------------------------------------------------------
 
     public function register_settings(): void {
-        foreach ( [ self::OPT_KEY, self::OPT_ENDPOINT, self::OPT_DOMAIN, self::OPT_FONT_HEADING, self::OPT_FONT_BODY, self::OPT_DEBUG ] as $opt ) {
+        foreach ( [ self::OPT_KEY, self::OPT_ENDPOINT, self::OPT_DOMAIN, self::OPT_FONT_HEADING, self::OPT_FONT_BODY, self::OPT_FONT_SOURCE, self::OPT_DEFER_GLOBAL_THIRD_PARTY_CSS, self::OPT_CONDITIONAL_FONTAWESOME_CSS, self::OPT_CONDITIONAL_FORMIDABLE_CSS, self::OPT_DEBUG ] as $opt ) {
             register_setting( 'cdc_settings', $opt, [ 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ] );
         }
         add_action( 'admin_post_cdc_clear_log', [ $this, 'clear_log' ] );
@@ -611,6 +622,9 @@ final class ClientDesk {
                     </div>
                     <div id="cdc-g-scripts" class="cdc-panel">
                         <p class="cdc-panel-desc">Paste analytics, tracking pixels, or any other <code>&lt;head&gt;</code> code here. Renders on every page.</p>
+                        <p class="cdc-panel-desc" style="color:#8a6d3b;background:#fcf8e3;border:1px solid #faebcc;padding:10px 12px;border-radius:4px;">
+                            Performance tip: avoid global <code>&lt;link rel="stylesheet"&gt;</code> tags here. Third-party CSS in <code>&lt;head&gt;</code> can block first render and hurt LCP. Prefer page-scoped loading or deferred stylesheet patterns.
+                        </p>
                         <textarea name="cdc_global_scripts" class="cdc-code-editor cdc-global-editor"><?php echo esc_textarea( $global_scripts ); ?></textarea>
                     </div>
                     <div id="cdc-g-woo-css" class="cdc-panel">
@@ -675,6 +689,7 @@ final class ClientDesk {
                 'message'       => $message,
                 'font_heading'  => trim( (string) get_option( self::OPT_FONT_HEADING, '' ) ),
                 'font_body'     => trim( (string) get_option( self::OPT_FONT_BODY, '' ) ),
+                'font_source'   => $this->font_source(),
             ] ),
             'timeout' => 120,
         ] );
@@ -786,6 +801,7 @@ final class ClientDesk {
             'message'      => $message,
             'font_heading' => trim( (string) get_option( self::OPT_FONT_HEADING, '' ) ),
             'font_body'    => trim( (string) get_option( self::OPT_FONT_BODY, '' ) ),
+            'font_source'  => $this->font_source(),
         ] );
 
         $ch = curl_init( $endpoint );
@@ -1242,6 +1258,7 @@ final class ClientDesk {
         $local_mode = $this->is_local_mode();
         $local_api_key = $local_mode ? $this->local_api_key() : '';
         $configured = $local_mode || ( '' !== trim( (string) get_option( self::OPT_KEY, '' ) ) && '' !== trim( (string) get_option( self::OPT_ENDPOINT, '' ) ) );
+        $font_source = $this->font_source();
         ?>
         <button id="cd-launch-btn" class="cd-launch-btn">
             <span class="cd-launch-icon">≡</span>
@@ -1257,6 +1274,11 @@ final class ClientDesk {
                 <span class="cd-iw-credit">An <strong>Impact Websites</strong> exclusive</span>
                 <!-- Inline font selectors -->
                 <div class="cd-font-inline" id="cd-font-inline">
+                    <span class="cd-font-inline-label">Type:</span>
+                    <select id="cd-font-source" class="cd-font-select-inline">
+                        <option value="google" <?php selected( 'google', $font_source ); ?>>Google</option>
+                        <option value="system" <?php selected( 'system', $font_source ); ?>>System / Local</option>
+                    </select>
                     <span class="cd-font-inline-label">H:</span>
                     <select id="cd-font-heading" class="cd-font-select-inline">
                         <?php
@@ -2870,12 +2892,14 @@ final class ClientDesk {
             function saveFonts() {
                 var heading = document.getElementById('cd-font-heading').value;
                 var body    = document.getElementById('cd-font-body').value;
+                var source  = document.getElementById('cd-font-source').value;
                 fontSave.disabled = true;
                 var d = new FormData();
                 d.append('action',       'cdc_save_fonts');
                 d.append('nonce',        nonce);
                 d.append('font_heading', heading);
                 d.append('font_body',    body);
+                d.append('font_source',  source);
                 fetch(ajaxUrl, { method: 'POST', body: d })
                     .then(function(r) { return r.json(); })
                     .then(function(res) {
@@ -3105,6 +3129,45 @@ final class ClientDesk {
                         <p class="cd-settings-desc">Logs all ClientDesk requests and errors to a file in the plugin directory. Disable when not needed.</p>
                     </div>
 
+                    <h3 style="margin-top:32px;">Performance</h3>
+                    <div class="cd-settings-row">
+                        <input type="hidden" name="<?php echo esc_attr( self::OPT_DEFER_GLOBAL_THIRD_PARTY_CSS ); ?>" value="0" />
+                        <label>
+                            <input type="checkbox" name="<?php echo esc_attr( self::OPT_DEFER_GLOBAL_THIRD_PARTY_CSS ); ?>" value="1" <?php checked( $this->is_enabled( self::OPT_DEFER_GLOBAL_THIRD_PARTY_CSS, true ) ); ?> />
+                            Defer third-party stylesheet links found in Global Scripts
+                        </label>
+                        <p class="cd-settings-desc">Recommended. Converts external <code>rel="stylesheet"</code> links in Global Scripts to non-blocking loading so they do not sit on the critical render path.</p>
+                    </div>
+                    <div class="cd-settings-row">
+                        <input type="hidden" name="<?php echo esc_attr( self::OPT_CONDITIONAL_FONTAWESOME_CSS ); ?>" value="0" />
+                        <label>
+                            <input type="checkbox" name="<?php echo esc_attr( self::OPT_CONDITIONAL_FONTAWESOME_CSS ); ?>" value="1" <?php checked( $this->is_enabled( self::OPT_CONDITIONAL_FONTAWESOME_CSS, true ) ); ?> />
+                            Load Font Awesome CSS only when icon usage is detected
+                        </label>
+                        <p class="cd-settings-desc">Reduces global CSS cost from <code>use.fontawesome.com</code> by skipping known Font Awesome styles on pages without FA icon usage patterns.</p>
+                    </div>
+                    <div class="cd-settings-row">
+                        <input type="hidden" name="<?php echo esc_attr( self::OPT_CONDITIONAL_FORMIDABLE_CSS ); ?>" value="0" />
+                        <label>
+                            <input type="checkbox" name="<?php echo esc_attr( self::OPT_CONDITIONAL_FORMIDABLE_CSS ); ?>" value="1" <?php checked( $this->is_enabled( self::OPT_CONDITIONAL_FORMIDABLE_CSS, true ) ); ?> />
+                            Load Formidable CSS only on pages likely to contain forms
+                        </label>
+                        <p class="cd-settings-desc">Skips Formidable stylesheet output on non-form pages by checking common Formidable shortcode and class markers.</p>
+                    </div>
+
+                    <h3 style="margin-top:32px;">PageSpeed image delivery checklist</h3>
+                    <div class="cd-settings-row">
+                        <p class="cd-settings-desc" style="margin-top:0;">
+                            Use this alongside the CSS optimizations above:
+                        </p>
+                        <ul style="margin:6px 0 0 18px;">
+                            <li>Serve modern formats (WebP/AVIF) where possible.</li>
+                            <li>Resize images to rendered dimensions before upload.</li>
+                            <li>Compress large hero/background assets.</li>
+                            <li>Lazy-load below-the-fold images and iframes.</li>
+                        </ul>
+                    </div>
+
                     <button type="submit" class="cd-settings-save" style="margin-top:24px;">Save</button>
                 </form>
 
@@ -3244,10 +3307,147 @@ final class ClientDesk {
 
         $heading = sanitize_text_field( wp_unslash( $_POST['font_heading'] ?? '' ) );
         $body    = sanitize_text_field( wp_unslash( $_POST['font_body']    ?? '' ) );
+        $source  = sanitize_text_field( wp_unslash( $_POST['font_source']  ?? 'google' ) );
+        if ( ! in_array( $source, [ 'google', 'system' ], true ) ) $source = 'google';
         update_option( self::OPT_FONT_HEADING, $heading );
         update_option( self::OPT_FONT_BODY,    $body );
+        update_option( self::OPT_FONT_SOURCE,  $source );
 
-        wp_send_json_success( [ 'font_heading' => $heading, 'font_body' => $body ] );
+        wp_send_json_success( [ 'font_heading' => $heading, 'font_body' => $body, 'font_source' => $source ] );
+    }
+
+    public function optimize_frontend_styles(): void {
+        if ( is_admin() ) return;
+        if ( ! $this->is_enabled( self::OPT_CONDITIONAL_FONTAWESOME_CSS, true ) && ! $this->is_enabled( self::OPT_CONDITIONAL_FORMIDABLE_CSS, true ) ) return;
+
+        $styles = wp_styles();
+        if ( ! $styles || ! isset( $styles->queue ) || ! is_array( $styles->queue ) ) return;
+
+        $context = $this->frontend_context_content();
+        $needs_fontawesome = $this->content_uses_fontawesome( $context );
+        $needs_formidable = $this->content_uses_formidable( $context );
+        $queue = $styles->queue;
+
+        foreach ( $queue as $handle ) {
+            $registered = $styles->registered[ $handle ] ?? null;
+            if ( ! $registered ) continue;
+            $src = strtolower( (string) $registered->src );
+
+            if ( $this->is_enabled( self::OPT_CONDITIONAL_FONTAWESOME_CSS, true ) && ! $needs_fontawesome && $this->is_fontawesome_style( strtolower( (string) $handle ), $src ) ) {
+                wp_dequeue_style( $handle );
+            }
+            if ( $this->is_enabled( self::OPT_CONDITIONAL_FORMIDABLE_CSS, true ) && ! $needs_formidable && $this->is_formidable_style( strtolower( (string) $handle ), $src ) ) {
+                wp_dequeue_style( $handle );
+            }
+        }
+    }
+
+    private function font_source(): string {
+        $source = trim( (string) get_option( self::OPT_FONT_SOURCE, 'google' ) );
+        return in_array( $source, [ 'google', 'system' ], true ) ? $source : 'google';
+    }
+
+    private function css_font_stack( string $font ): string {
+        $font = trim( (string) preg_replace( '/[^a-zA-Z0-9,\-\s]/', '', $font ) );
+        if ( $font === '' ) return 'sans-serif';
+
+        $generic = [ 'serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-sans-serif', 'ui-serif', 'ui-monospace', 'ui-rounded', 'emoji', 'math', 'fangsong' ];
+        $parts = array_filter( array_map( 'trim', explode( ',', $font ) ), static fn( $part ) => $part !== '' );
+        if ( empty( $parts ) ) return 'sans-serif';
+
+        $stack = [];
+        foreach ( $parts as $part ) {
+            if ( in_array( strtolower( $part ), $generic, true ) ) {
+                $stack[] = strtolower( $part );
+                continue;
+            }
+            $stack[] = "'" . str_replace( "'", "\\'", $part ) . "'";
+        }
+
+        return implode( ', ', $stack );
+    }
+
+    private function print_non_blocking_stylesheet( string $url, string $id = '' ): void {
+        $id_attr = $id !== '' ? ' id="' . esc_attr( $id ) . '"' : '';
+        $safe_url = esc_url( $url );
+        echo '<link rel="preload" as="style" href="' . $safe_url . '"' . $id_attr . ' onload="this.onload=null;this.rel=\'stylesheet\'">' . "\n"; // phpcs:ignore
+        echo '<noscript><link rel="stylesheet" href="' . $safe_url . '"' . $id_attr . '></noscript>' . "\n"; // phpcs:ignore
+    }
+
+    private function defer_external_stylesheet_links( string $html ): string {
+        if ( ! $this->is_enabled( self::OPT_DEFER_GLOBAL_THIRD_PARTY_CSS, true ) ) return $html;
+
+        return (string) preg_replace_callback(
+            '/<link\b[^>]*>/i',
+            function( array $matches ): string {
+                $tag = $matches[0] ?? '';
+                if ( ! preg_match( '/\brel\s*=\s*([\'"])\s*stylesheet\s*\1/i', $tag ) ) return $tag;
+                if ( preg_match( '/\bdata-cdc-keep-blocking\b/i', $tag ) ) return $tag;
+                if ( ! preg_match( '/\bhref\s*=\s*(["\'])([^"\']+)\1/i', $tag, $href_match ) ) return $tag;
+                $href = trim( (string) ( $href_match[2] ?? '' ) );
+                if ( $href === '' || ! $this->is_external_url( $href ) ) return $tag;
+                $safe_href = esc_url( $href );
+                return '<link rel="preload" as="style" href="' . $safe_href . '" onload="this.onload=null;this.rel=\'stylesheet\'"><noscript><link rel="stylesheet" href="' . $safe_href . '"></noscript>';
+            },
+            $html
+        );
+    }
+
+    private function is_enabled( string $option_name, bool $default = false ): bool {
+        $value = get_option( $option_name, null );
+        if ( null === $value || '' === $value ) return $default;
+        return in_array( strtolower( (string) $value ), [ '1', 'true', 'yes', 'on' ], true );
+    }
+
+    private function is_external_url( string $url ): bool {
+        $url_host = parse_url( $url, PHP_URL_HOST );
+        $site_host = parse_url( home_url(), PHP_URL_HOST );
+        if ( ! $site_host ) return false;
+        if ( ! $url_host ) return preg_match( '/^https?:\/\/[^\/\s?#]+/i', trim( $url ) ) === 1;
+        return strtolower( (string) $url_host ) !== strtolower( (string) $site_host );
+    }
+
+    private function frontend_context_content(): string {
+        $content = '';
+        if ( is_singular() ) {
+            $post = get_queried_object();
+            if ( $post instanceof WP_Post ) {
+                $content .= "\n" . (string) $post->post_content;
+                $content .= "\n" . (string) get_post_meta( $post->ID, CDC_FIELD_HEADER, true );
+                $content .= "\n" . (string) get_post_meta( $post->ID, CDC_FIELD_BODY, true );
+                $content .= "\n" . (string) get_post_meta( $post->ID, CDC_FIELD_FOOTER, true );
+            }
+        }
+        $content .= "\n" . (string) get_option( CDC_GLOBAL_HEADER, '' );
+        $content .= "\n" . (string) get_option( CDC_GLOBAL_FOOTER, '' );
+        $content .= "\n" . (string) get_option( CDC_GLOBAL_SCRIPTS, '' );
+        return strtolower( $content );
+    }
+
+    private function content_uses_fontawesome( string $content ): bool {
+        return preg_match( '/\bfa[srlbd]?\s+fa-[a-z0-9-]+/i', $content ) === 1
+            || preg_match( '/\bfont-awesome\b/i', $content ) === 1
+            || str_contains( $content, 'use.fontawesome.com' );
+    }
+
+    private function content_uses_formidable( string $content ): bool {
+        return preg_match( '/\[(formidable|frm_form|display-frm-data)\b/i', $content ) === 1
+            || str_contains( $content, 'frm_forms' );
+    }
+
+    private function is_fontawesome_style( string $handle, string $src ): bool {
+        return str_contains( $src, 'use.fontawesome.com' )
+            || str_contains( $src, 'fontawesome' )
+            || str_contains( $src, 'svg-with-js.css' )
+            || str_contains( $src, 'v4-shims.css' )
+            || str_contains( $handle, 'fontawesome' )
+            || str_contains( $handle, 'font-awesome' );
+    }
+
+    private function is_formidable_style( string $handle, string $src ): bool {
+        return str_contains( $src, 'formidableforms.css' )
+            || str_contains( $src, 'formidable')
+            || str_contains( $handle, 'formidable' );
     }
 
     // ---------------------------------------------------------------
