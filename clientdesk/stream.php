@@ -252,6 +252,50 @@ function cdc_is_valid_action_for_mode( ?array $action_data, string $conversation
     return in_array( $action, [ 'confirm', 'clarify', 'need_image' ], true );
 }
 
+function cdc_retry_instruction_for_mode( string $conversation_mode ): string {
+    if ( $conversation_mode === 'apply_pending' ) {
+        return 'That was invalid. Return only one JSON action right now. No prose, no code fences, no explanation. Allowed actions: patch, insert, update_meta, apply.';
+    }
+
+    return 'That was invalid. Return only one JSON action right now. No prose, no code fences, no explanation. Allowed actions: confirm, clarify, need_image.';
+}
+
+function cdc_normalize_chat_action( ?array $action_data ): ?array {
+    if ( ! is_array( $action_data ) || empty( $action_data['action'] ) ) {
+        return $action_data;
+    }
+
+    $action = (string) $action_data['action'];
+    if ( in_array( $action, [ 'confirm', 'clarify', 'need_image' ], true ) ) {
+        return $action_data;
+    }
+
+    if ( ! in_array( $action, [ 'patch', 'insert', 'update_meta', 'apply' ], true ) ) {
+        return $action_data;
+    }
+
+    if ( $action === 'update_meta' ) {
+        $field = (string) ( $action_data['field'] ?? '' );
+        if ( $field === 'meta_title' ) {
+            $label = 'meta title';
+        } elseif ( $field === 'meta_desc' ) {
+            $label = 'meta description';
+        } else {
+            $label = 'metadata';
+        }
+        $value = trim( (string) ( $action_data['value'] ?? '' ) );
+        $desc  = $value !== '' ? "update the {$label} to \"{$value}\"" : "update the {$label}";
+    } else {
+        $summary = trim( (string) ( $action_data['summary'] ?? '' ) );
+        $desc    = $summary !== '' ? $summary : 'apply that requested change';
+    }
+
+    return [
+        'action'  => 'confirm',
+        'message' => 'I can ' . rtrim( $desc, ". \t\n\r" ) . '. Shall I go ahead and build this?',
+    ];
+}
+
 function cdc_history_text_from_action( ?array $action_data, string $full_text ): string {
     if ( ! is_array( $action_data ) ) {
         return trim( $full_text );
@@ -690,10 +734,14 @@ if ( ! $skip_apply ) {
     }
 
     $action_data = cdc_parse_action( $full_text );
-    if ( $conversation_mode === 'apply_pending' && ! cdc_is_valid_action_for_mode( $action_data, $conversation_mode ) ) {
+    if ( $conversation_mode === 'chat' ) {
+        $action_data = cdc_normalize_chat_action( $action_data );
+    }
+
+    if ( ! cdc_is_valid_action_for_mode( $action_data, $conversation_mode ) ) {
         $retry_payload               = $payload;
         $retry_payload['messages'][] = [ 'role' => 'assistant', 'content' => $full_text ];
-        $retry_payload['messages'][] = [ 'role' => 'user', 'content' => 'That was invalid. Return only one JSON action right now. No prose, no code fences, no explanation.' ];
+        $retry_payload['messages'][] = [ 'role' => 'user', 'content' => cdc_retry_instruction_for_mode( $conversation_mode ) ];
 
         $retry_result = cdc_stream_claude( $api_key, $retry_payload, false );
         $input_tokens += $retry_result['input_tokens'];
@@ -702,6 +750,9 @@ if ( ! $skip_apply ) {
         if ( ! $retry_result['curl_errno'] && '' !== $retry_result['full_text'] ) {
             $full_text    = $retry_result['full_text'];
             $action_data  = cdc_parse_action( $full_text );
+            if ( $conversation_mode === 'chat' ) {
+                $action_data = cdc_normalize_chat_action( $action_data );
+            }
             $curl_error   = $retry_result['curl_error'];
             $curl_errno   = $retry_result['curl_errno'];
         } else {
