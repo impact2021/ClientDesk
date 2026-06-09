@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.16
+ * Version: 2.9.17
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -18,7 +18,7 @@ $clientdesk_update_checker = YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::bu
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CLIENTDESK_VERSION', '2.9.16' );
+define( 'CLIENTDESK_VERSION', '2.9.17' );
 // Retained for existing internal references.
 define( 'CDC_VERSION', CLIENTDESK_VERSION );
 define( 'CDC_URL',     plugin_dir_url( __FILE__ ) );
@@ -1961,7 +1961,7 @@ final class ClientDesk {
                     currentField  = 'body';
                     history = []; lastSeoScore = {};
                     clearPendingAction(); closeImagePicker(); pageImages = [];
-                    chat.innerHTML = '<div class="cd-bubble cd-bubble--cd"><div class="cd-bubble-label">CLIENTDESK</div><div class="cd-bubble-text">Sitewide mode — describe a change to make across <strong>all pages</strong> at once.\n\nExamples:\n• "Change all links that point to /contact/ to /contact-us/"\n• "Replace all mentions of Acme Corp with Globex Corporation"\n• "Update the phone number 09 123 4567 to 09 987 6543 on every page"</div></div>';
+                    chat.innerHTML = '<div class="cd-bubble cd-bubble--cd"><div class="cd-bubble-label">CLIENTDESK</div><div class="cd-bubble-text">Sitewide mode — describe a change to make across <strong>all pages</strong> at once.\n\nExamples:\n• "Change all links that point to /contact/ to /contact-us/"\n• "Replace all mentions of Company Name with New Company Name"\n• "Update the phone number 09 123 4567 to 09 987 6543 on every page"</div></div>';
                     seoEmpty.style.display = 'block'; seoContent.style.display = 'none';
                     keywordBar.value = ''; analyseBtn.disabled = true;
                     return;
