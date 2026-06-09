@@ -1276,8 +1276,10 @@ final class ClientDesk {
             exit;
         }
 
-        $zip_host      = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
-        $endpoint_host = strtolower( (string) wp_parse_url( trim( (string) get_option( self::OPT_ENDPOINT, '' ) ), PHP_URL_HOST ) );
+        $zip_host_raw      = wp_parse_url( $url, PHP_URL_HOST );
+        $endpoint_host_raw = wp_parse_url( trim( (string) get_option( self::OPT_ENDPOINT, '' ) ), PHP_URL_HOST );
+        $zip_host          = is_string( $zip_host_raw ) ? strtolower( $zip_host_raw ) : '';
+        $endpoint_host     = is_string( $endpoint_host_raw ) ? strtolower( $endpoint_host_raw ) : '';
         $allowed_hosts = array_filter( array_unique( [
             $endpoint_host,
             'github.com',
@@ -1323,6 +1325,9 @@ final class ClientDesk {
 
         $upgrader = new Plugin_Upgrader( new WP_Ajax_Upgrader_Skin() );
         $result   = $upgrader->install( $url );
+        if ( is_wp_error( $result ) ) {
+            self::log( 'update_now', $result->get_error_message() );
+        }
 
         $status = ( ! is_wp_error( $result ) && false !== $result ) ? 'ok' : 'failed';
         wp_safe_redirect( add_query_arg( 'cdc_update', $status, $redirect ) );
