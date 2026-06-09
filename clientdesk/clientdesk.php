@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.15
+ * Version: 2.9.16
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -18,7 +18,7 @@ $clientdesk_update_checker = YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::bu
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CLIENTDESK_VERSION', '2.9.15' );
+define( 'CLIENTDESK_VERSION', '2.9.16' );
 // Retained for existing internal references.
 define( 'CDC_VERSION', CLIENTDESK_VERSION );
 define( 'CDC_URL',     plugin_dir_url( __FILE__ ) );
@@ -540,7 +540,7 @@ final class ClientDesk {
 
     public function register_menus(): void {
         $cap = $this->cap();
-        add_menu_page( 'ClientDesk', 'ClientDesk', $cap, self::MENU_SLUG, [ $this, 'render_chat' ], 'dashicons-edit-page', 2 );
+        add_menu_page( 'ClientDesk', 'ClientDesk', $cap, self::MENU_SLUG, [ $this, 'render_chat' ], 'dashicons-edit-page', 3 );
         add_submenu_page( self::MENU_SLUG, 'Make a Change',   'Make a Change',   $cap, self::MENU_SLUG,     [ $this, 'render_chat' ] );
         add_submenu_page( self::MENU_SLUG, 'Change History',  'Change History',  $cap, self::HISTORY_SLUG,  [ $this, 'render_history' ] );
         add_submenu_page( self::MENU_SLUG, 'Global Content',  'Global Content',  'manage_options', self::GLOBALS_SLUG, [ $this, 'render_globals' ] );
