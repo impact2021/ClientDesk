@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.22
+ * Version: 2.9.23
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -10,7 +10,7 @@
 
 require_once plugin_dir_path( __FILE__ ) . 'vendor/plugin-update-checker/load-v5p5.php';
 
-define( 'CLIENTDESK_VERSION', '2.9.22' );
+define( 'CLIENTDESK_VERSION', '2.9.23' );
 $clientdesk_zip_version = str_replace( '.', '_', CLIENTDESK_VERSION );
 $clientdesk_update_metadata_url = 'https://raw.githubusercontent.com/impact2021/ClientDesk/main/clientdesk-update.json';
 
@@ -1244,7 +1244,81 @@ final class ClientDesk {
         return trim( (string) get_option( 'cds_anthropic_api_key', '' ) );
     }
 
+    private function update_notice_transient_key(): string {
+        return 'cdc_update_notice_' . get_current_user_id();
+    }
+
+    private function redirect_with_update_status( string $status, string $redirect, string $message = '' ): void {
+        set_transient(
+            $this->update_notice_transient_key(),
+            [
+                'status'  => $status,
+                'message' => $message,
+            ],
+            15 * MINUTE_IN_SECONDS
+        );
+
+        wp_safe_redirect( add_query_arg( 'cdc_update', $status, $redirect ) );
+        exit;
+    }
+
+    private function resolve_update_package( string $latest, string $url ) {
+        $latest = trim( $latest );
+        $url    = trim( $url );
+
+        if ( '' === $url ) {
+            return new WP_Error( 'cdc_update_missing_url', 'No update URL was provided.' );
+        }
+
+        if ( preg_match( '/\.json(?:$|[?#])/i', $url ) ) {
+            $response = wp_remote_get( $url, [ 'timeout' => 20 ] );
+            if ( is_wp_error( $response ) ) {
+                return new WP_Error( 'cdc_update_metadata_fetch_failed', $response->get_error_message() );
+            }
+
+            $metadata = json_decode( wp_remote_retrieve_body( $response ), true );
+            if ( ! is_array( $metadata ) ) {
+                return new WP_Error( 'cdc_update_invalid_metadata', 'Update metadata could not be parsed.' );
+            }
+
+            $latest = trim( (string) ( $metadata['version'] ?? $latest ) );
+            $url    = trim( (string) ( $metadata['download_url'] ?? ( $metadata['package'] ?? '' ) ) );
+
+            if ( '' === $url ) {
+                return new WP_Error( 'cdc_update_missing_package', 'Update metadata did not include a package URL.' );
+            }
+        }
+
+        return [
+            'latest' => $latest,
+            'url'    => $url,
+        ];
+    }
+
     public function maybe_show_update_notice(): void {
+        $status = isset( $_GET['cdc_update'] ) ? sanitize_key( wp_unslash( $_GET['cdc_update'] ) ) : '';
+        if ( '' !== $status ) {
+            $notice  = get_transient( $this->update_notice_transient_key() );
+            $message = is_array( $notice ) ? trim( (string) ( $notice['message'] ?? '' ) ) : '';
+
+            if ( false !== $notice ) {
+                delete_transient( $this->update_notice_transient_key() );
+            }
+
+            if ( 'ok' === $status ) {
+                echo '<div class="notice notice-success is-dismissible"><p>ClientDesk updated successfully.</p></div>';
+            } elseif ( 'failed' === $status ) {
+                if ( '' === $message ) {
+                    $message = 'ClientDesk update failed.';
+                }
+                echo '<div class="notice notice-error is-dismissible"><p>' . esc_html( $message ) . '</p></div>';
+            } elseif ( 'blocked' === $status ) {
+                echo '<div class="notice notice-warning is-dismissible"><p>ClientDesk updates are disabled while using local mode.</p></div>';
+            } elseif ( 'none' === $status ) {
+                echo '<div class="notice notice-info is-dismissible"><p>ClientDesk is already up to date.</p></div>';
+            }
+        }
+
         if ( $this->is_local_mode() ) return;
 
         $latest = trim( (string) get_transient( CDC_REMOTE_VERSION_TRANSIENT ) );
@@ -1267,16 +1341,23 @@ final class ClientDesk {
 
         $redirect = admin_url( 'plugins.php' );
         if ( $this->is_local_mode() ) {
-            wp_safe_redirect( add_query_arg( 'cdc_update', 'blocked', $redirect ) );
-            exit;
+            $this->redirect_with_update_status( 'blocked', $redirect );
         }
 
         $latest = trim( (string) get_transient( CDC_REMOTE_VERSION_TRANSIENT ) );
         $url    = esc_url_raw( trim( (string) get_transient( CDC_REMOTE_ZIP_URL_TRANSIENT ) ) );
 
+        $resolved_update = $this->resolve_update_package( $latest, $url );
+        if ( is_wp_error( $resolved_update ) ) {
+            self::log( 'update_now', $resolved_update->get_error_message() );
+            $this->redirect_with_update_status( 'failed', $redirect, $resolved_update->get_error_message() );
+        }
+
+        $latest = trim( (string) $resolved_update['latest'] );
+        $url    = esc_url_raw( trim( (string) $resolved_update['url'] ) );
+
         if ( ! $latest || ! $url || version_compare( $latest, CLIENTDESK_VERSION, '<=' ) ) {
-            wp_safe_redirect( add_query_arg( 'cdc_update', 'none', $redirect ) );
-            exit;
+            $this->redirect_with_update_status( 'none', $redirect );
         }
 
         $zip_host_raw      = wp_parse_url( $url, PHP_URL_HOST );
@@ -1286,20 +1367,19 @@ final class ClientDesk {
         $allowed_hosts = array_filter( array_unique( [
             $endpoint_host,
             'github.com',
+            'raw.githubusercontent.com',
             'objects.githubusercontent.com',
             'user-attachments.githubusercontent.com',
         ] ) );
 
         if ( ! wp_http_validate_url( $url ) || ! $zip_host || ! in_array( $zip_host, $allowed_hosts, true ) ) {
-            wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );
-            exit;
+            $this->redirect_with_update_status( 'failed', $redirect, 'The update URL is not allowed.' );
         }
 
         $upgrader_file = ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
         if ( ! class_exists( 'WP_Upgrader' ) ) {
             if ( ! file_exists( $upgrader_file ) ) {
-                wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );
-                exit;
+                $this->redirect_with_update_status( 'failed', $redirect, 'WordPress upgrader files were not found.' );
             }
             require_once $upgrader_file;
         }
@@ -1307,8 +1387,7 @@ final class ClientDesk {
         $plugin_upgrader_file = ABSPATH . 'wp-admin/includes/class-plugin-upgrader.php';
         if ( ! class_exists( 'Plugin_Upgrader' ) ) {
             if ( ! file_exists( $plugin_upgrader_file ) ) {
-                wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );
-                exit;
+                $this->redirect_with_update_status( 'failed', $redirect, 'WordPress plugin upgrader files were not found.' );
             }
             require_once $plugin_upgrader_file;
         }
@@ -1316,25 +1395,49 @@ final class ClientDesk {
         $ajax_skin_file = ABSPATH . 'wp-admin/includes/class-wp-ajax-upgrader-skin.php';
         if ( ! class_exists( 'WP_Ajax_Upgrader_Skin' ) ) {
             if ( ! file_exists( $ajax_skin_file ) ) {
-                wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );
-                exit;
+                $this->redirect_with_update_status( 'failed', $redirect, 'WordPress AJAX upgrader files were not found.' );
             }
             require_once $ajax_skin_file;
         }
         if ( ! class_exists( 'WP_Ajax_Upgrader_Skin' ) ) {
-            wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );
-            exit;
+            $this->redirect_with_update_status( 'failed', $redirect, 'The WordPress AJAX upgrader skin could not be loaded.' );
         }
+
+        $plugin_file = plugin_basename( __FILE__ );
+        $current     = get_site_transient( 'update_plugins' );
+        if ( ! is_object( $current ) ) {
+            $current = new stdClass();
+        }
+        if ( ! isset( $current->checked ) || ! is_array( $current->checked ) ) {
+            $current->checked = [];
+        }
+        if ( ! isset( $current->response ) || ! is_array( $current->response ) ) {
+            $current->response = [];
+        }
+
+        $current->checked[ $plugin_file ]  = CLIENTDESK_VERSION;
+        $current->response[ $plugin_file ] = (object) [
+            'id'          => $plugin_file,
+            'slug'        => dirname( $plugin_file ),
+            'plugin'      => $plugin_file,
+            'new_version' => $latest,
+            'package'     => $url,
+            'url'         => '',
+        ];
+        set_site_transient( 'update_plugins', $current );
 
         $upgrader = new Plugin_Upgrader( new WP_Ajax_Upgrader_Skin() );
-        $result   = $upgrader->install( $url );
+        $result   = $upgrader->upgrade( $plugin_file );
         if ( is_wp_error( $result ) ) {
             self::log( 'update_now', $result->get_error_message() );
+            $this->redirect_with_update_status( 'failed', $redirect, $result->get_error_message() );
         }
 
-        $status = ( ! is_wp_error( $result ) && false !== $result ) ? 'ok' : 'failed';
-        wp_safe_redirect( add_query_arg( 'cdc_update', $status, $redirect ) );
-        exit;
+        if ( false === $result ) {
+            $this->redirect_with_update_status( 'failed', $redirect, 'ClientDesk update failed.' );
+        }
+
+        $this->redirect_with_update_status( 'ok', $redirect );
     }
 
     // ---------------------------------------------------------------
