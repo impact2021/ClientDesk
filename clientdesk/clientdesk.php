@@ -11,7 +11,7 @@
 require_once plugin_dir_path( __FILE__ ) . 'vendor/plugin-update-checker/load-v5p5.php';
 
 $clientdesk_update_checker = YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::buildUpdateChecker(
-    'https://github.com/user-attachments/files/28653788/clientdesk-v2_9_9.zip',
+    'https://raw.githubusercontent.com/impact2021/ClientDesk/main/clientdesk-v2_9_17.zip',
     __FILE__,
     'clientdesk'
 );
