@@ -276,7 +276,13 @@ function cdc_normalize_chat_action( ?array $action_data ): ?array {
 
     if ( $action === 'update_meta' ) {
         $field = (string) ( $action_data['field'] ?? '' );
-        $label = $field === 'meta_title' ? 'meta title' : ( $field === 'meta_desc' ? 'meta description' : 'metadata' );
+        if ( $field === 'meta_title' ) {
+            $label = 'meta title';
+        } elseif ( $field === 'meta_desc' ) {
+            $label = 'meta description';
+        } else {
+            $label = 'metadata';
+        }
         $value = trim( (string) ( $action_data['value'] ?? '' ) );
         $desc  = $value !== '' ? "update the {$label} to \"{$value}\"" : "update the {$label}";
     } else {
@@ -286,7 +292,7 @@ function cdc_normalize_chat_action( ?array $action_data ): ?array {
 
     return [
         'action'  => 'confirm',
-        'message' => 'I can ' . rtrim( $desc, ". \t\n\r\0\x0B" ) . '. Shall I go ahead?',
+        'message' => 'I can ' . rtrim( $desc, ". \t\n\r" ) . '. Shall I go ahead?',
     ];
 }
 
