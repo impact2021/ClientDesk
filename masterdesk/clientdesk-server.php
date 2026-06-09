@@ -10,7 +10,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDS_VERSION',   '2.4.2' );
+define( 'CDS_VERSION',   '2.4.3' );
 define( 'CDS_TOKEN_TABLE', 'clientdesk_tokens' );
 define( 'CDS_TABLE',     'clientdesk_sites' );
 define( 'CDS_LOG_TABLE', 'clientdesk_usage' );
