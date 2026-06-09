@@ -1275,14 +1275,25 @@ final class ClientDesk {
             exit;
         }
 
-        require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
-        require_once ABSPATH . 'wp-admin/includes/class-plugin-upgrader.php';
-        require_once ABSPATH . 'wp-admin/includes/class-wp-ajax-upgrader-skin.php';
+        if ( ! class_exists( 'WP_Upgrader' ) ) {
+            require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+        }
+        if ( ! class_exists( 'Plugin_Upgrader' ) ) {
+            require_once ABSPATH . 'wp-admin/includes/class-plugin-upgrader.php';
+        }
+        if ( ! class_exists( 'WP_Ajax_Upgrader_Skin' ) ) {
+            $ajax_skin_file = ABSPATH . 'wp-admin/includes/class-wp-ajax-upgrader-skin.php';
+            if ( file_exists( $ajax_skin_file ) ) {
+                require_once $ajax_skin_file;
+            } else {
+                require_once ABSPATH . 'wp-admin/includes/misc.php';
+            }
+        }
 
         $upgrader = new Plugin_Upgrader( new WP_Ajax_Upgrader_Skin() );
         $result   = $upgrader->install( $url );
 
-        $status = ( true === $result && ! is_wp_error( $upgrader->skin->result ?? null ) ) ? 'ok' : 'failed';
+        $status = ( ! is_wp_error( $result ) && false !== $result ) ? 'ok' : 'failed';
         wp_safe_redirect( add_query_arg( 'cdc_update', $status, $redirect ) );
         exit;
     }
