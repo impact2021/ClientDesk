@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.20
+ * Version: 2.9.21
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -10,7 +10,7 @@
 
 require_once plugin_dir_path( __FILE__ ) . 'vendor/plugin-update-checker/load-v5p5.php';
 
-define( 'CLIENTDESK_VERSION', '2.9.20' );
+define( 'CLIENTDESK_VERSION', '2.9.21' );
 $clientdesk_zip_version = str_replace( '.', '_', CLIENTDESK_VERSION );
 $clientdesk_update_metadata_url = 'https://raw.githubusercontent.com/impact2021/ClientDesk/main/clientdesk-update.json';
 
@@ -3501,9 +3501,9 @@ final class ClientDesk {
             'Raleway', 'Ubuntu', 'Noto Sans', 'Source Sans 3', 'PT Sans', 'Oxygen',
             'Mulish', 'Quicksand', 'Cabin', 'Hind', 'Barlow', 'DM Sans', 'Figtree',
             'Outfit', 'Plus Jakarta Sans', 'Sora', 'Josefin Sans', 'Karla', 'Rubik',
-            'Work Sans', 'Exo 2', 'Manrope',
+            'Trebuchet MS', 'Work Sans', 'Exo 2', 'Manrope',
             // Serif
-            'Lora', 'Merriweather', 'Playfair Display', 'PT Serif', 'EB Garamond',
+            'Georgia', 'Lora', 'Merriweather', 'Playfair Display', 'PT Serif', 'EB Garamond',
             'Libre Baskerville', 'Cormorant Garamond', 'Crimson Text', 'DM Serif Display',
             'Spectral', 'Noto Serif', 'Source Serif 4', 'Bitter', 'Libre Caslon Text',
             // Display / decorative
