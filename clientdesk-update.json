@@ -1,0 +1,15 @@
+{
+  "name": "ClientDesk",
+  "slug": "clientdesk",
+  "version": "2.9.17",
+  "download_url": "https://raw.githubusercontent.com/impact2021/ClientDesk/main/clientdesk-v2_9_17.zip",
+  "requires": "6.0",
+  "tested": "6.8",
+  "requires_php": "7.4",
+  "last_updated": "2026-06-09 00:00:00",
+  "author": "impact2021",
+  "homepage": "https://github.com/impact2021/ClientDesk",
+  "sections": {
+    "description": "ClientDesk provides plain-English website editing, page management, and SEO tools."
+  }
+}
