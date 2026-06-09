@@ -1276,17 +1276,45 @@ final class ClientDesk {
             exit;
         }
 
+        $zip_host      = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
+        $endpoint_host = strtolower( (string) wp_parse_url( trim( (string) get_option( self::OPT_ENDPOINT, '' ) ), PHP_URL_HOST ) );
+        $allowed_hosts = array_filter( array_unique( [
+            $endpoint_host,
+            'github.com',
+            'objects.githubusercontent.com',
+            'user-attachments.githubusercontent.com',
+        ] ) );
+
+        if ( ! wp_http_validate_url( $url ) || ! $zip_host || ! in_array( $zip_host, $allowed_hosts, true ) ) {
+            wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );
+            exit;
+        }
+
+        $upgrader_file = ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
         if ( ! class_exists( 'WP_Upgrader' ) ) {
-            require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
-        }
-        if ( ! class_exists( 'Plugin_Upgrader' ) ) {
-            require_once ABSPATH . 'wp-admin/includes/class-plugin-upgrader.php';
-        }
-        if ( ! class_exists( 'WP_Ajax_Upgrader_Skin' ) ) {
-            $ajax_skin_file = ABSPATH . 'wp-admin/includes/class-wp-ajax-upgrader-skin.php';
-            if ( file_exists( $ajax_skin_file ) ) {
-                require_once $ajax_skin_file;
+            if ( ! file_exists( $upgrader_file ) ) {
+                wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );
+                exit;
             }
+            require_once $upgrader_file;
+        }
+
+        $plugin_upgrader_file = ABSPATH . 'wp-admin/includes/class-plugin-upgrader.php';
+        if ( ! class_exists( 'Plugin_Upgrader' ) ) {
+            if ( ! file_exists( $plugin_upgrader_file ) ) {
+                wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );
+                exit;
+            }
+            require_once $plugin_upgrader_file;
+        }
+
+        $ajax_skin_file = ABSPATH . 'wp-admin/includes/class-wp-ajax-upgrader-skin.php';
+        if ( ! class_exists( 'WP_Ajax_Upgrader_Skin' ) ) {
+            if ( ! file_exists( $ajax_skin_file ) ) {
+                wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );
+                exit;
+            }
+            require_once $ajax_skin_file;
         }
         if ( ! class_exists( 'WP_Ajax_Upgrader_Skin' ) ) {
             wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );

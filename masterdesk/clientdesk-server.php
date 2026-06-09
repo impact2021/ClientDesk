@@ -1340,7 +1340,7 @@ function cds_render_settings(): void {
                 <div class="cds-settings-row cds-settings-row--inline">
                     <div>
                         <label>Latest ClientDesk version <code>clientdesk_latest_version</code></label>
-                        <input type="text" name="clientdesk_latest_version" value="<?php echo esc_attr( $clientdesk_latest_version ); ?>" placeholder="e.g. 2.9.14" />
+                        <input type="text" name="clientdesk_latest_version" value="<?php echo esc_attr( $clientdesk_latest_version ); ?>" placeholder="e.g. 2.9.15" />
                     </div>
                     <div>
                         <label>ClientDesk ZIP URL <code>clientdesk_zip_url</code></label>
