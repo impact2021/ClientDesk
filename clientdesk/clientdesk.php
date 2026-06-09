@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.14
+ * Version: 2.9.15
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -18,9 +18,14 @@ $clientdesk_update_checker = YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::bu
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDC_VERSION', '2.9.14' );
+define( 'CLIENTDESK_VERSION', '2.9.15' );
+// Retained for existing internal references.
+define( 'CDC_VERSION', CLIENTDESK_VERSION );
 define( 'CDC_URL',     plugin_dir_url( __FILE__ ) );
 define( 'CDC_PATH',    plugin_dir_path( __FILE__ ) );
+define( 'CDC_REMOTE_VERSION_TRANSIENT', 'cdc_clientdesk_latest_version' );
+define( 'CDC_REMOTE_ZIP_URL_TRANSIENT', 'cdc_clientdesk_zip_url' );
+define( 'CDC_REMOTE_UPDATE_TTL', 15 * MINUTE_IN_SECONDS );
 
 // Field keys
 define( 'CDC_FIELD_HEADER',  '_iw_header' );
@@ -97,6 +102,7 @@ final class ClientDesk {
         add_action( 'save_post_page',        [ $this, 'auto_populate' ], 10, 2 );
         // Globals save
         add_action( 'admin_post_cdc_save_globals', [ $this, 'save_globals' ] );
+        add_action( 'admin_post_cdc_update_now',   [ $this, 'handle_update_now' ] );
         // Disable block editor for pages
         add_filter( 'use_block_editor_for_post_type', [ $this, 'disable_block_editor' ], 10, 2 );
         // AJAX
@@ -1238,14 +1244,94 @@ final class ClientDesk {
     public function maybe_show_update_notice(): void {
         if ( $this->is_local_mode() ) return;
 
-        $latest = (string) get_transient( 'cdc_latest_version' );
-        $url    = (string) get_transient( 'cdc_download_url' );
-        if ( $latest && $url && version_compare( $latest, CDC_VERSION, '>' ) ) {
+        $latest = trim( (string) get_transient( CDC_REMOTE_VERSION_TRANSIENT ) );
+        $url    = esc_url_raw( trim( (string) get_transient( CDC_REMOTE_ZIP_URL_TRANSIENT ) ) );
+        if ( $latest && $url && version_compare( $latest, CLIENTDESK_VERSION, '>' ) ) {
             echo '<div class="notice notice-warning is-dismissible"><p>';
             echo 'A new ClientDesk version (' . esc_html( $latest ) . ') is available. ';
-            echo '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener noreferrer">Download update</a>.';
+            echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="display:inline-block;margin-left:8px;">';
+            wp_nonce_field( 'cdc_update_now' );
+            echo '<input type="hidden" name="action" value="cdc_update_now" />';
+            echo '<button type="submit" class="button button-primary">Update Now</button>';
+            echo '</form>';
             echo '</p></div>';
         }
+    }
+
+    public function handle_update_now(): void {
+        check_admin_referer( 'cdc_update_now' );
+        if ( ! current_user_can( 'update_plugins' ) ) wp_die( 'Permission denied.' );
+
+        $redirect = admin_url( 'plugins.php' );
+        if ( $this->is_local_mode() ) {
+            wp_safe_redirect( add_query_arg( 'cdc_update', 'blocked', $redirect ) );
+            exit;
+        }
+
+        $latest = trim( (string) get_transient( CDC_REMOTE_VERSION_TRANSIENT ) );
+        $url    = esc_url_raw( trim( (string) get_transient( CDC_REMOTE_ZIP_URL_TRANSIENT ) ) );
+
+        if ( ! $latest || ! $url || version_compare( $latest, CLIENTDESK_VERSION, '<=' ) ) {
+            wp_safe_redirect( add_query_arg( 'cdc_update', 'none', $redirect ) );
+            exit;
+        }
+
+        $zip_host_raw      = wp_parse_url( $url, PHP_URL_HOST );
+        $endpoint_host_raw = wp_parse_url( trim( (string) get_option( self::OPT_ENDPOINT, '' ) ), PHP_URL_HOST );
+        $zip_host          = is_string( $zip_host_raw ) ? strtolower( $zip_host_raw ) : '';
+        $endpoint_host     = is_string( $endpoint_host_raw ) ? strtolower( $endpoint_host_raw ) : '';
+        $allowed_hosts = array_filter( array_unique( [
+            $endpoint_host,
+            'github.com',
+            'objects.githubusercontent.com',
+            'user-attachments.githubusercontent.com',
+        ] ) );
+
+        if ( ! wp_http_validate_url( $url ) || ! $zip_host || ! in_array( $zip_host, $allowed_hosts, true ) ) {
+            wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );
+            exit;
+        }
+
+        $upgrader_file = ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+        if ( ! class_exists( 'WP_Upgrader' ) ) {
+            if ( ! file_exists( $upgrader_file ) ) {
+                wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );
+                exit;
+            }
+            require_once $upgrader_file;
+        }
+
+        $plugin_upgrader_file = ABSPATH . 'wp-admin/includes/class-plugin-upgrader.php';
+        if ( ! class_exists( 'Plugin_Upgrader' ) ) {
+            if ( ! file_exists( $plugin_upgrader_file ) ) {
+                wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );
+                exit;
+            }
+            require_once $plugin_upgrader_file;
+        }
+
+        $ajax_skin_file = ABSPATH . 'wp-admin/includes/class-wp-ajax-upgrader-skin.php';
+        if ( ! class_exists( 'WP_Ajax_Upgrader_Skin' ) ) {
+            if ( ! file_exists( $ajax_skin_file ) ) {
+                wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );
+                exit;
+            }
+            require_once $ajax_skin_file;
+        }
+        if ( ! class_exists( 'WP_Ajax_Upgrader_Skin' ) ) {
+            wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );
+            exit;
+        }
+
+        $upgrader = new Plugin_Upgrader( new WP_Ajax_Upgrader_Skin() );
+        $result   = $upgrader->install( $url );
+        if ( is_wp_error( $result ) ) {
+            self::log( 'update_now', $result->get_error_message() );
+        }
+
+        $status = ( ! is_wp_error( $result ) && false !== $result ) ? 'ok' : 'failed';
+        wp_safe_redirect( add_query_arg( 'cdc_update', $status, $redirect ) );
+        exit;
     }
 
     // ---------------------------------------------------------------

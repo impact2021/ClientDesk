@@ -145,8 +145,10 @@ if ( $local_api_key !== '' ) {
     $contact_phone = $token_body['contact_phone'] ?? '';
     $contact_email = $token_body['contact_email'] ?? '';
 
-    set_transient( 'cdc_latest_version', trim( (string) ( $token_body['clientdesk_version'] ?? '' ) ), 12 * HOUR_IN_SECONDS );
-    set_transient( 'cdc_download_url', trim( (string) ( $token_body['clientdesk_download_url'] ?? '' ) ), 12 * HOUR_IN_SECONDS );
+    $remote_latest_version = trim( (string) ( $token_body['clientdesk_latest_version'] ?? ( $token_body['clientdesk_version'] ?? '' ) ) );
+    $remote_zip_url        = trim( (string) ( $token_body['clientdesk_zip_url'] ?? ( $token_body['clientdesk_download_url'] ?? '' ) ) );
+    set_transient( 'cdc_clientdesk_latest_version', $remote_latest_version, 15 * MINUTE_IN_SECONDS );
+    set_transient( 'cdc_clientdesk_zip_url', $remote_zip_url, 15 * MINUTE_IN_SECONDS );
 }
 
 // ---------------------------------------------------------------
