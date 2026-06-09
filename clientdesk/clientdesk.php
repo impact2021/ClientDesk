@@ -10,15 +10,18 @@
 
 require_once plugin_dir_path( __FILE__ ) . 'vendor/plugin-update-checker/load-v5p5.php';
 
+define( 'CLIENTDESK_VERSION', '2.9.17' );
+$clientdesk_zip_version = str_replace( '.', '_', CLIENTDESK_VERSION );
+$clientdesk_update_url  = 'https://raw.githubusercontent.com/impact2021/ClientDesk/main/clientdesk-v' . $clientdesk_zip_version . '.zip';
+
 $clientdesk_update_checker = YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::buildUpdateChecker(
-    'https://raw.githubusercontent.com/impact2021/ClientDesk/main/clientdesk-v2_9_17.zip',
+    $clientdesk_update_url,
     __FILE__,
     'clientdesk'
 );
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CLIENTDESK_VERSION', '2.9.17' );
 // Retained for existing internal references.
 define( 'CDC_VERSION', CLIENTDESK_VERSION );
 define( 'CDC_URL',     plugin_dir_url( __FILE__ ) );
