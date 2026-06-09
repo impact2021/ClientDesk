@@ -12,10 +12,10 @@ require_once plugin_dir_path( __FILE__ ) . 'vendor/plugin-update-checker/load-v5
 
 define( 'CLIENTDESK_VERSION', '2.9.17' );
 $clientdesk_zip_version = str_replace( '.', '_', CLIENTDESK_VERSION );
-$clientdesk_update_url  = 'https://raw.githubusercontent.com/impact2021/ClientDesk/main/clientdesk-v' . $clientdesk_zip_version . '.zip';
+$clientdesk_update_metadata_url = 'https://raw.githubusercontent.com/impact2021/ClientDesk/main/clientdesk-update.json';
 
 $clientdesk_update_checker = YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::buildUpdateChecker(
-    $clientdesk_update_url,
+    $clientdesk_update_metadata_url,
     __FILE__,
     'clientdesk'
 );
