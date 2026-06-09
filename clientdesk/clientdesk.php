@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.13
+ * Version: 2.9.14
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -18,7 +18,7 @@ $clientdesk_update_checker = YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::bu
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDC_VERSION', '2.9.13' );
+define( 'CDC_VERSION', '2.9.14' );
 define( 'CDC_URL',     plugin_dir_url( __FILE__ ) );
 define( 'CDC_PATH',    plugin_dir_path( __FILE__ ) );
 
@@ -1416,6 +1416,7 @@ final class ClientDesk {
                     <option value="">Select a page…</option>
                     <option value="-1">⬆ Site Header</option>
                     <option value="-2">⬇ Site Footer</option>
+                    <option value="sitewide">🌐 All pages (sitewide)</option>
                     <option value="" disabled>──────────────</option>
                     <?php foreach ( $pages as $page ) : ?>
                         <option value="<?php echo esc_attr( (string) $page->ID ); ?>"><?php echo esc_html( $page->post_title ); ?></option>
@@ -1541,6 +1542,7 @@ final class ClientDesk {
             var nonce      = <?php echo wp_json_encode( wp_create_nonce( 'cdc_nonce' ) ); ?>;
             var ajaxUrl    = <?php echo wp_json_encode( admin_url( 'admin-ajax.php' ) ); ?>;
             var streamUrl  = <?php echo wp_json_encode( CDC_URL . 'stream.php' ); ?>;
+            var sidewideUrl = <?php echo wp_json_encode( CDC_URL . 'sitewide.php' ); ?>;
             var localApiKey = <?php echo wp_json_encode( $local_api_key ); ?>;
             var chat       = document.getElementById('cd-chat');
             var input      = document.getElementById('cd-input');
@@ -1866,6 +1868,19 @@ final class ClientDesk {
                     return;
                 }
                 hideNewPagePanel();
+
+                // Handle sitewide mode
+                if (this.value === 'sitewide') {
+                    currentPageId = 'sitewide';
+                    currentField  = 'body';
+                    history = []; lastSeoScore = {};
+                    clearPendingAction(); closeImagePicker(); pageImages = [];
+                    chat.innerHTML = '<div class="cd-bubble cd-bubble--cd"><div class="cd-bubble-label">CLIENTDESK</div><div class="cd-bubble-text">Sitewide mode — describe a change to make across <strong>all pages</strong> at once.\n\nExamples:\n• "Change all links that point to /contact/ to /contact-us/"\n• "Replace all mentions of Acme Corp with Globex Corporation"\n• "Update the phone number 09 123 4567 to 09 987 6543 on every page"</div></div>';
+                    seoEmpty.style.display = 'block'; seoContent.style.display = 'none';
+                    keywordBar.value = ''; analyseBtn.disabled = true;
+                    return;
+                }
+
                 currentPageId=parseInt(this.value)||0;
                 history=[];
                 lastSeoScore={};
@@ -2259,11 +2274,126 @@ final class ClientDesk {
             // Main send — intercepts image intent before hitting AI
             // ---------------------------------------------------------------
 
+            // ---------------------------------------------------------------
+            // Sitewide send — 2-step AI matching across all pages
+            // ---------------------------------------------------------------
+
+            function escHtml(str) {
+                return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            }
+
+            function sendSitewide(message) {
+                var typing = addTyping();
+                var statusText = null;
+
+                var params = new URLSearchParams();
+                params.append('nonce',   nonce);
+                params.append('message', message);
+                if (localApiKey) params.append('local_api_key', localApiKey);
+
+                fetch(sidewideUrl, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: params.toString()
+                }).then(function(response) {
+                    if (!response.ok) {
+                        typing.remove();
+                        addBubble('cd','ERROR','Server error: HTTP '+response.status);
+                        setInputState(true); return;
+                    }
+                    var reader  = response.body.getReader();
+                    var decoder = new TextDecoder();
+                    var buffer  = '';
+
+                    function processChunk(value) {
+                        buffer += decoder.decode(value || new Uint8Array(), {stream: !!value});
+                        var lines = buffer.split('\n'); buffer = lines.pop();
+                        for (var i = 0; i < lines.length; i++) {
+                            var line = lines[i].trim(); if (!line) continue;
+                            if (line.startsWith('event: ')) continue;
+                            if (line.startsWith('data: ')) {
+                                var eventLine = lines[i-1] ? lines[i-1].trim() : '';
+                                var eventType = eventLine.startsWith('event: ') ? eventLine.slice(7) : '';
+                                var jsonStr   = line.slice(6);
+                                try { var data = JSON.parse(jsonStr); } catch(e) { continue; }
+
+                                if (eventType === 'sitewide_status') {
+                                    // Show/update status inside the typing bubble
+                                    if (!statusText) {
+                                        typing.innerHTML = '<div class="cd-bubble-label">CLIENTDESK</div><div class="cd-bubble-text cd-sitewide-status"></div>';
+                                        statusText = typing.querySelector('.cd-sitewide-status');
+                                    }
+                                    if (statusText) statusText.textContent = data.message || '';
+                                    scrollBottom();
+
+                                } else if (eventType === 'error') {
+                                    swStreamEnded = true;
+                                    typing.remove();
+                                    addBubble('cd','ERROR', data.message || 'Something went wrong.');
+                                    setInputState(true);
+
+                                } else if (eventType === 'done') {
+                                    swStreamEnded = true;
+                                    typing.remove();
+                                    if (!data.success || !data.changed_pages || !data.changed_pages.length) {
+                                        addBubble('cd','CLIENTDESK', data.message || 'No changes were made.');
+                                    } else {
+                                        var extra = document.createElement('div');
+                                        extra.className = 'cd-sitewide-results';
+                                        data.changed_pages.forEach(function(p) {
+                                            var row = document.createElement('div');
+                                            row.className = 'cd-sitewide-result-row';
+                                            row.innerHTML = p.url
+                                                ? '<a href="'+escHtml(p.url)+'" target="_blank">'+escHtml(p.title)+' \u2192</a>'
+                                                : escHtml(p.title);
+                                            extra.appendChild(row);
+                                        });
+                                        addBubble('cd','DONE', escHtml(data.message) + ' Live on your site now.', extra);
+                                    }
+                                    if (data.spent_fmt) updateUsage(data.spent_fmt, data.budget_fmt, data.remaining_fmt, data.show_warning, data.contact_phone, data.contact_email);
+                                    else fetchUsage();
+                                    setInputState(true);
+                                }
+                            }
+                        }
+                    }
+
+                    var swStreamEnded = false;
+                    function pump() {
+                        return reader.read().then(function(result) {
+                            processChunk(result.value);
+                            if (!result.done) return pump();
+                            else if (!swStreamEnded) {
+                                swStreamEnded = true; typing.remove();
+                                addBubble('cd','ERROR','Response ended unexpectedly.');
+                                setInputState(true);
+                            }
+                        });
+                    }
+                    return pump();
+                }).catch(function() {
+                    typing.remove();
+                    addBubble('cd','ERROR','Network error. Please try again.');
+                    setInputState(true);
+                });
+            }
+
             function send(msgOverride, options) {
                 options = options || {};
                 if(busy)return;
                 var message=msgOverride||input.value.trim(); if(!message)return;
                 if(!currentPageId){alert('Please select a page first.');return;}
+
+                // Sitewide mode: route to sitewide.php
+                if (currentPageId === 'sitewide') {
+                    clearPendingAction();
+                    addBubble('user', null, message);
+                    if (!msgOverride) { input.value = ''; input.style.height = 'auto'; }
+                    setInputState(false);
+                    sendSitewide(message);
+                    return;
+                }
+
                 var pendingForApply = options.pendingAction || pendingAction;
                 var isApplyMode = options.conversationMode === 'apply_pending' || (!!pendingForApply && isApprovalMessage(message));
 
