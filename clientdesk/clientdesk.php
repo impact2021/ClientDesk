@@ -19,6 +19,7 @@ $clientdesk_update_checker = YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::bu
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 define( 'CLIENTDESK_VERSION', '2.9.15' );
+// Retained for existing internal references.
 define( 'CDC_VERSION', CLIENTDESK_VERSION );
 define( 'CDC_URL',     plugin_dir_url( __FILE__ ) );
 define( 'CDC_PATH',    plugin_dir_path( __FILE__ ) );
@@ -1285,9 +1286,11 @@ final class ClientDesk {
             $ajax_skin_file = ABSPATH . 'wp-admin/includes/class-wp-ajax-upgrader-skin.php';
             if ( file_exists( $ajax_skin_file ) ) {
                 require_once $ajax_skin_file;
-            } else {
-                require_once ABSPATH . 'wp-admin/includes/misc.php';
             }
+        }
+        if ( ! class_exists( 'WP_Ajax_Upgrader_Skin' ) ) {
+            wp_safe_redirect( add_query_arg( 'cdc_update', 'failed', $redirect ) );
+            exit;
         }
 
         $upgrader = new Plugin_Upgrader( new WP_Ajax_Upgrader_Skin() );
