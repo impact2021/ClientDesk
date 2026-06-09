@@ -292,7 +292,7 @@ function cdc_normalize_chat_action( ?array $action_data ): ?array {
 
     return [
         'action'  => 'confirm',
-        'message' => 'I can ' . rtrim( $desc, ". \t\n\r" ) . '. Shall I go ahead?',
+        'message' => 'I can ' . rtrim( $desc, ". \t\n\r" ) . '. Shall I go ahead and build this?',
     ];
 }
 
