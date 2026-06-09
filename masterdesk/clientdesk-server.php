@@ -2,7 +2,7 @@
 /**
  * Plugin Name: MasterDesk
  * Description: MasterDesk — Impact Websites central hub. Manages ClientDesk licences, usage tracking, and AI for all client sites.
- * Version: 2.4.2
+ * Version: 2.4.4
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -10,7 +10,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDS_VERSION',   '2.4.3' );
+define( 'CDS_VERSION',   '2.4.4' );
 define( 'CDS_TOKEN_TABLE', 'clientdesk_tokens' );
 define( 'CDS_TABLE',     'clientdesk_sites' );
 define( 'CDS_LOG_TABLE', 'clientdesk_usage' );
@@ -35,7 +35,7 @@ function cds_activate(): void {
         licence_key     VARCHAR(64)     NOT NULL,
         label           VARCHAR(255)    NOT NULL DEFAULT '',
         status          VARCHAR(16)     NOT NULL DEFAULT 'active',
-        monthly_budget  INT UNSIGNED    NOT NULL DEFAULT 1000,
+        monthly_budget  INT UNSIGNED    NOT NULL DEFAULT 500,
         created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
         UNIQUE KEY licence_key (licence_key),
@@ -268,8 +268,9 @@ function cds_handle_chat( WP_REST_Request $request ): void {
     if ( $action_data && in_array( $action_data['action'] ?? '', [ 'apply', 'patch', 'insert' ], true ) ) {
         cds_log_usage( $site->id, $domain, 'apply', $action_data['summary'] ?? '', $input_tokens, $output_tokens, $cost_cents );
         $spent_cents += $cost_cents;
-    } elseif ( ! $action_data ) {
-        cds_log_usage( $site->id, $domain, 'chat', substr( $full_text, 0, 80 ), $input_tokens, $output_tokens, $cost_cents );
+    } else {
+        $action_label = $action_data['action'] ?? 'chat';
+        cds_log_usage( $site->id, $domain, $action_label, substr( $full_text, 0, 80 ), $input_tokens, $output_tokens, $cost_cents );
         $spent_cents += $cost_cents;
     }
 
@@ -829,7 +830,7 @@ function cds_monthly_spent_cents( int $site_id ): int {
     $table = $wpdb->prefix . CDS_LOG_TABLE;
     $start = gmdate( 'Y-m-01 00:00:00' );
     return (int) $wpdb->get_var( $wpdb->prepare(
-        "SELECT COALESCE(SUM(cost_cents),0) FROM {$table} WHERE site_id = %d AND action = 'apply' AND used_at >= %s",
+        "SELECT COALESCE(SUM(cost_cents),0) FROM {$table} WHERE site_id = %d AND used_at >= %s",
         $site_id, $start
     ) );
 }
@@ -860,7 +861,7 @@ function cds_error( string $message ): WP_REST_Response {
 // ---------------------------------------------------------------
 
 function cds_register_menu(): void {
-    add_menu_page( 'ClientDesk', 'ClientDesk', 'manage_options', 'clientdesk-server', 'cds_render_panel', 'dashicons-rest-api', 30 );
+    add_menu_page( 'MasterDesk', 'MasterDesk', 'manage_options', 'clientdesk-server', 'cds_render_panel', 'dashicons-rest-api', 2 );
     add_submenu_page( 'clientdesk-server', 'Sites',    'Sites',    'manage_options', 'clientdesk-server',          'cds_render_panel' );
     add_submenu_page( 'clientdesk-server', 'Settings', 'Settings', 'manage_options', 'clientdesk-server-settings', 'cds_render_settings' );
 }
@@ -907,7 +908,7 @@ function cds_render_panel(): void {
         $rows = $wpdb->get_results(
             "SELECT site_id, COALESCE(SUM(cost_cents),0) as total, COALESCE(SUM(input_tokens),0) as input_t, COALESCE(SUM(output_tokens),0) as output_t, COUNT(*) as changes
              FROM {$wpdb->prefix}" . CDS_LOG_TABLE . "
-             WHERE action = 'apply' AND used_at >= '{$start}' AND site_id IN ({$ids})
+             WHERE used_at >= '{$start}' AND site_id IN ({$ids})
              GROUP BY site_id"
         );
         foreach ( $rows as $r ) {
@@ -929,18 +930,6 @@ function cds_render_panel(): void {
             <a href="<?php echo esc_url( admin_url( 'admin.php?page=clientdesk-server-settings' ) ); ?>" class="cds-header-link">Settings</a>
         </div>
 
-        <div class="cds-settings-section-label">ClientDesk updates</div>
-
-        <div class="cds-settings-row">
-            <label>Latest ClientDesk version</label>
-            <input type="text" name="cds_clientdesk_version" value="<?php echo esc_attr( $clientdesk_version ); ?>" />
-        </div>
-
-        <div class="cds-settings-row">
-            <label>ClientDesk download URL</label>
-            <input type="text" name="cds_clientdesk_download_url" value="<?php echo esc_attr( $clientdesk_download_url ); ?>" />
-        </div>
-
         <div class="cds-panel">
 
             <div class="cds-panel-top">
@@ -960,7 +949,7 @@ function cds_render_panel(): void {
                     </div>
                     <div class="cds-field">
                         <label>Monthly budget ($)</label>
-                        <input type="number" id="cds-new-budget" value="10.00" min="0.01" step="0.01" />
+                        <input type="number" id="cds-new-budget" value="5.00" min="0.01" step="0.01" />
                     </div>
                     <div class="cds-add-form-actions">
                         <button class="cds-btn cds-btn--primary" id="cds-add-submit">Generate licence &amp; add</button>
@@ -1084,7 +1073,7 @@ function cds_render_panel(): void {
             data.append('nonce',  nonce);
             data.append('domain', domain);
             data.append('label',  label);
-            data.append('budget', budget || '10.00');
+            data.append('budget', budget || '5.00');
 
             fetch(ajaxUrl, { method:'POST', body:data })
                 .then(function(r) { return r.json(); })
@@ -1371,7 +1360,7 @@ function cds_ajax_add_site(): void {
     global $wpdb;
     $domain  = cds_normalise_domain( sanitize_text_field( wp_unslash( $_POST['domain'] ?? '' ) ) );
     $label   = sanitize_text_field( wp_unslash( $_POST['label'] ?? '' ) );
-    $dollars = (float) ( $_POST['budget'] ?? 10.00 );
+    $dollars = (float) ( $_POST['budget'] ?? 5.00 );
     $cents   = max( 1, (int) round( $dollars * 100 ) );
 
     if ( '' === $domain ) wp_send_json_error( [ 'message' => 'Domain is required.' ] );
