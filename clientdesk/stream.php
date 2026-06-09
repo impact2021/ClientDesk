@@ -113,10 +113,63 @@ function cdc_parse_action( string $response ): ?array {
         $data = json_decode( $trimmed, true );
         if ( is_array( $data ) && isset( $data['action'] ) ) return $data;
     }
+    $embedded_json = cdc_extract_first_json_object( $trimmed );
+    if ( $embedded_json !== null ) {
+        $data = json_decode( $embedded_json, true );
+        if ( is_array( $data ) && isset( $data['action'] ) ) return $data;
+    }
     if ( preg_match( '/```(?:json)?\s*(\{.*?\})\s*```/s', $trimmed, $m ) ) {
         $data = json_decode( $m[1], true );
         if ( is_array( $data ) && isset( $data['action'] ) ) return $data;
     }
+    return null;
+}
+
+function cdc_extract_first_json_object( string $text ): ?string {
+    $start = strpos( $text, '{' );
+    if ( $start === false ) {
+        return null;
+    }
+
+    $len       = strlen( $text );
+    $depth     = 0;
+    $in_string = false;
+    $escaped   = false;
+
+    for ( $i = $start; $i < $len; $i++ ) {
+        $char = $text[ $i ];
+
+        if ( $in_string ) {
+            if ( $escaped ) {
+                $escaped = false;
+                continue;
+            }
+            if ( $char === '\\' ) {
+                $escaped = true;
+                continue;
+            }
+            if ( $char === '"' ) {
+                $in_string = false;
+            }
+            continue;
+        }
+
+        if ( $char === '"' ) {
+            $in_string = true;
+            continue;
+        }
+        if ( $char === '{' ) {
+            $depth++;
+            continue;
+        }
+        if ( $char === '}' ) {
+            $depth--;
+            if ( $depth === 0 ) {
+                return substr( $text, $start, $i - $start + 1 );
+            }
+        }
+    }
+
     return null;
 }
 
@@ -666,10 +719,17 @@ if ( ! $skip_apply ) {
     }
 
     if ( ! cdc_is_valid_action_for_mode( $action_data, $conversation_mode ) ) {
-        $action_data = [
-            'action'  => 'clarify',
-            'message' => 'I lost the draft for that change. Please describe it again in one sentence and I’ll redo it cleanly.',
-        ];
+        if ( $conversation_mode === 'apply_pending' ) {
+            $action_data = [
+                'action'  => 'clarify',
+                'message' => 'I lost the draft for that change. Please describe it again in one sentence and I’ll redo it cleanly.',
+            ];
+        } else {
+            $action_data = [
+                'action'  => 'clarify',
+                'message' => 'I could not parse that response. Please repeat your requested change in one sentence.',
+            ];
+        }
         $full_text = $action_data['message'];
     }
 

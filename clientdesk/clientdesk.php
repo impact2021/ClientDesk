@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.17
+ * Version: 2.9.18
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -10,7 +10,7 @@
 
 require_once plugin_dir_path( __FILE__ ) . 'vendor/plugin-update-checker/load-v5p5.php';
 
-define( 'CLIENTDESK_VERSION', '2.9.17' );
+define( 'CLIENTDESK_VERSION', '2.9.18' );
 $clientdesk_zip_version = str_replace( '.', '_', CLIENTDESK_VERSION );
 $clientdesk_update_metadata_url = 'https://raw.githubusercontent.com/impact2021/ClientDesk/main/clientdesk-update.json';
 
