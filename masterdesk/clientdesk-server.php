@@ -844,10 +844,10 @@ function cds_monthly_usage_summary( int $site_id ): array {
     ) );
 
     return [
-        'cost_cents'    => isset( $row->cost_cents ) ? (int) $row->cost_cents : 0,
-        'input_tokens'  => isset( $row->input_tokens ) ? (int) $row->input_tokens : 0,
-        'output_tokens' => isset( $row->output_tokens ) ? (int) $row->output_tokens : 0,
-        'requests'      => isset( $row->requests ) ? (int) $row->requests : 0,
+        'cost_cents'    => (int) $row->cost_cents,
+        'input_tokens'  => (int) $row->input_tokens,
+        'output_tokens' => (int) $row->output_tokens,
+        'requests'      => (int) $row->requests,
     ];
 }
 
@@ -859,8 +859,8 @@ function cds_monthly_usage_summary_map( array $site_ids ): array {
         return [];
     }
 
-    $table       = $wpdb->prefix . CDS_LOG_TABLE;
-    $start       = gmdate( 'Y-m-01 00:00:00' );
+    $table        = $wpdb->prefix . CDS_LOG_TABLE;
+    $start        = gmdate( 'Y-m-01 00:00:00' );
     $placeholders = implode( ',', array_fill( 0, count( $site_ids ), '%d' ) );
     $query        = $wpdb->prepare(
         "SELECT site_id,
