@@ -603,6 +603,9 @@ function cds_handle_token( WP_REST_Request $request ): WP_REST_Response {
     $warn_threshold  = (float) get_option( 'cds_warn_threshold', '2.00' );
     $warn_cents      = (int) round( $warn_threshold * 100 );
 
+    $clientdesk_latest_version = trim( (string) get_option( 'clientdesk_latest_version', '' ) );
+    $clientdesk_zip_url        = trim( (string) get_option( 'clientdesk_zip_url', '' ) );
+
     return new WP_REST_Response( [
         'success'         => true,
         'token'           => $token,
@@ -615,8 +618,11 @@ function cds_handle_token( WP_REST_Request $request ): WP_REST_Response {
         'show_warning'    => $remaining_cents > 0 && $remaining_cents <= $warn_cents,
         'contact_phone'   => (string) get_option( 'cds_contact_phone', '0210559077' ),
         'contact_email'   => (string) get_option( 'cds_contact_email', 'impact@impactwebsites.co.nz' ),
-        'clientdesk_version'      => trim( (string) get_option( 'cds_clientdesk_version', '' ) ),
-        'clientdesk_download_url' => trim( (string) get_option( 'cds_clientdesk_download_url', '' ) ),
+        'clientdesk_latest_version' => $clientdesk_latest_version,
+        'clientdesk_zip_url'        => $clientdesk_zip_url,
+        // Backward compatibility for older ClientDesk clients.
+        'clientdesk_version'        => $clientdesk_latest_version,
+        'clientdesk_download_url'   => $clientdesk_zip_url,
     ], 200 );
 }
 
@@ -868,8 +874,8 @@ function cds_register_settings(): void {
         'cds_warn_threshold',
         'cds_contact_phone',
         'cds_contact_email',
-        'cds_clientdesk_version',
-        'cds_clientdesk_download_url',
+        'clientdesk_latest_version',
+        'clientdesk_zip_url',
     ] as $opt ) {
         register_setting( 'cds_settings', $opt, [
             'type'              => 'string',
@@ -1268,8 +1274,8 @@ function cds_render_settings(): void {
     $warn_threshold = (string) get_option( 'cds_warn_threshold', '2.00' );
     $contact_phone  = (string) get_option( 'cds_contact_phone', '0210559077' );
     $contact_email  = (string) get_option( 'cds_contact_email', 'impact@impactwebsites.co.nz' );
-    $clientdesk_version = (string) get_option( 'cds_clientdesk_version', '' );
-    $clientdesk_download_url = (string) get_option( 'cds_clientdesk_download_url', '' );
+    $clientdesk_latest_version = (string) get_option( 'clientdesk_latest_version', '' );
+    $clientdesk_zip_url        = (string) get_option( 'clientdesk_zip_url', '' );
     $endpoint       = rest_url( 'clientdesk/v1/chat' );
     ?>
     <div class="cds-wrap cds-wrap--settings">
@@ -1326,6 +1332,19 @@ function cds_render_settings(): void {
                     <div>
                         <label>Your email address</label>
                         <input type="text" name="cds_contact_email" value="<?php echo esc_attr( $contact_email ); ?>" placeholder="e.g. impact@impactwebsites.co.nz" />
+                    </div>
+                </div>
+
+                <div class="cds-settings-section-label">ClientDesk updates</div>
+
+                <div class="cds-settings-row cds-settings-row--inline">
+                    <div>
+                        <label>clientdesk_latest_version</label>
+                        <input type="text" name="clientdesk_latest_version" value="<?php echo esc_attr( $clientdesk_latest_version ); ?>" placeholder="e.g. 2.9.14" />
+                    </div>
+                    <div>
+                        <label>clientdesk_zip_url</label>
+                        <input type="text" name="clientdesk_zip_url" value="<?php echo esc_attr( $clientdesk_zip_url ); ?>" placeholder="https://..." />
                     </div>
                 </div>
 
