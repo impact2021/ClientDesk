@@ -2,7 +2,7 @@
 /**
  * Plugin Name: MasterDesk
  * Description: MasterDesk — Impact Websites central hub. Manages ClientDesk licences, usage tracking, and AI for all client sites.
- * Version: 2.4.4
+ * Version: 2.4.5
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -10,7 +10,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDS_VERSION',   '2.4.4' );
+define( 'CDS_VERSION',   '2.4.5' );
 define( 'CDS_TOKEN_TABLE', 'clientdesk_tokens' );
 define( 'CDS_TABLE',     'clientdesk_sites' );
 define( 'CDS_LOG_TABLE', 'clientdesk_usage' );
@@ -826,13 +826,66 @@ function cds_normalise_domain( string $domain ): string {
 }
 
 function cds_monthly_spent_cents( int $site_id ): int {
+    return cds_monthly_usage_summary( $site_id )['cost_cents'];
+}
+
+function cds_monthly_usage_summary( int $site_id ): array {
     global $wpdb;
     $table = $wpdb->prefix . CDS_LOG_TABLE;
     $start = gmdate( 'Y-m-01 00:00:00' );
-    return (int) $wpdb->get_var( $wpdb->prepare(
-        "SELECT COALESCE(SUM(cost_cents),0) FROM {$table} WHERE site_id = %d AND used_at >= %s",
+    $row   = $wpdb->get_row( $wpdb->prepare(
+        "SELECT COALESCE(SUM(cost_cents),0) AS cost_cents,
+                COALESCE(SUM(input_tokens),0) AS input_tokens,
+                COALESCE(SUM(output_tokens),0) AS output_tokens,
+                COUNT(*) AS requests
+         FROM {$table}
+         WHERE site_id = %d AND used_at >= %s",
         $site_id, $start
     ) );
+
+    return [
+        'cost_cents'    => (int) $row->cost_cents,
+        'input_tokens'  => (int) $row->input_tokens,
+        'output_tokens' => (int) $row->output_tokens,
+        'requests'      => (int) $row->requests,
+    ];
+}
+
+function cds_monthly_usage_summary_map( array $site_ids ): array {
+    global $wpdb;
+
+    $site_ids = array_values( array_filter( array_map( 'intval', $site_ids ) ) );
+    if ( empty( $site_ids ) ) {
+        return [];
+    }
+
+    $table        = $wpdb->prefix . CDS_LOG_TABLE;
+    $start        = gmdate( 'Y-m-01 00:00:00' );
+    $placeholders = implode( ',', array_fill( 0, count( $site_ids ), '%d' ) );
+    $query        = $wpdb->prepare(
+        "SELECT site_id,
+                COALESCE(SUM(cost_cents),0) AS cost_cents,
+                COALESCE(SUM(input_tokens),0) AS input_tokens,
+                COALESCE(SUM(output_tokens),0) AS output_tokens,
+                COUNT(*) AS requests
+         FROM {$table}
+         WHERE used_at >= %s AND site_id IN ({$placeholders})
+         GROUP BY site_id",
+        array_merge( [ $start ], $site_ids )
+    );
+    $rows         = $wpdb->get_results( $query );
+    $summary_map  = [];
+
+    foreach ( $rows as $row ) {
+        $summary_map[ (int) $row->site_id ] = [
+            'cost_cents'    => (int) $row->cost_cents,
+            'input_tokens'  => (int) $row->input_tokens,
+            'output_tokens' => (int) $row->output_tokens,
+            'requests'      => (int) $row->requests,
+        ];
+    }
+
+    return $summary_map;
 }
 
 function cds_log_usage( int $site_id, string $domain, string $action, string $summary, int $input_tokens, int $output_tokens, int $cost_cents ): void {
@@ -901,25 +954,7 @@ function cds_render_panel(): void {
     global $wpdb;
     $sites = $wpdb->get_results( "SELECT * FROM {$wpdb->prefix}" . CDS_TABLE . " ORDER BY created_at DESC" );
 
-    $cost_map = [];
-    $start    = gmdate( 'Y-m-01 00:00:00' );
-    if ( $sites ) {
-        $ids  = implode( ',', array_map( 'intval', array_column( (array) $sites, 'id' ) ) );
-        $rows = $wpdb->get_results(
-            "SELECT site_id, COALESCE(SUM(cost_cents),0) as total, COALESCE(SUM(input_tokens),0) as input_t, COALESCE(SUM(output_tokens),0) as output_t, COUNT(*) as changes
-             FROM {$wpdb->prefix}" . CDS_LOG_TABLE . "
-             WHERE used_at >= '{$start}' AND site_id IN ({$ids})
-             GROUP BY site_id"
-        );
-        foreach ( $rows as $r ) {
-            $cost_map[ (int) $r->site_id ] = [
-                'cost_cents'    => (int) $r->total,
-                'input_tokens'  => (int) $r->input_t,
-                'output_tokens' => (int) $r->output_t,
-                'changes'       => (int) $r->changes,
-            ];
-        }
-    }
+    $cost_map = cds_monthly_usage_summary_map( array_column( (array) $sites, 'id' ) );
 
     $total_cost_cents = array_sum( array_column( $cost_map, 'cost_cents' ) );
     ?>
@@ -975,7 +1010,7 @@ function cds_render_panel(): void {
                 </thead>
                 <tbody>
                 <?php foreach ( $sites as $site ) :
-                    $stats         = $cost_map[ (int) $site->id ] ?? [ 'cost_cents' => 0, 'changes' => 0, 'input_tokens' => 0, 'output_tokens' => 0 ];
+                    $stats         = $cost_map[ (int) $site->id ] ?? [ 'cost_cents' => 0, 'requests' => 0, 'input_tokens' => 0, 'output_tokens' => 0 ];
                     $spent_cents   = $stats['cost_cents'];
                     $budget_cents  = (int) $site->monthly_budget;
                     $pct           = $budget_cents > 0 ? round( ( $spent_cents / $budget_cents ) * 100 ) : 0;
@@ -1017,7 +1052,7 @@ function cds_render_panel(): void {
                             <div class="cds-bar-track">
                                 <div class="cds-bar <?php echo esc_attr( $bar_class ); ?>" style="width:<?php echo esc_attr( min( 100, $pct ) . '%' ); ?>"></div>
                             </div>
-                            <div class="cds-token-detail"><?php echo esc_html( number_format( $total_tokens ) ); ?> tokens &middot; <?php echo esc_html( (string) $stats['changes'] ); ?> changes</div>
+                            <div class="cds-token-detail"><?php echo esc_html( number_format( $total_tokens ) ); ?> tokens &middot; <?php echo esc_html( (string) $stats['requests'] ); ?> requests</div>
                         </td>
                         <td>
                             <div class="cds-budget-input-wrap">
