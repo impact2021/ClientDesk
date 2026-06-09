@@ -1,8 +1,8 @@
 {
   "name": "ClientDesk",
   "slug": "clientdesk",
-  "version": "2.9.18",
-  "download_url": "https://raw.githubusercontent.com/impact2021/ClientDesk/main/clientdesk-v2_9_18.zip",
+  "version": "2.9.19",
+  "download_url": "https://raw.githubusercontent.com/impact2021/ClientDesk/main/clientdesk-v2_9_19.zip",
   "requires": "6.0",
   "tested": "6.8",
   "requires_php": "7.4",
