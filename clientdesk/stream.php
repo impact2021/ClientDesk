@@ -872,7 +872,7 @@ if ( $apply_result !== null && $apply_result !== '' ) {
     $action_data['page_url'] = get_permalink( $page_id ) ?: '';
 }
 
-// Step 5: Report usage to MasterDesk
+// Step 5: Report usage to MasterDesk and update spent/budget display values
 if ( $session_token !== '' && $endpoint !== '' ) {
     $report_endpoint = preg_replace( '/\/chat$/', '/report', $endpoint );
     $report_ch = curl_init( $report_endpoint );
@@ -890,8 +890,20 @@ if ( $session_token !== '' && $endpoint !== '' ) {
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_NOSIGNAL       => true,
     ] );
-    curl_exec( $report_ch );
+    $report_raw = curl_exec( $report_ch );
     curl_close( $report_ch );
+    // Update display values with post-usage figures returned by the report endpoint
+    if ( $report_raw ) {
+        $report_body = json_decode( $report_raw, true );
+        if ( is_array( $report_body ) && ( $report_body['success'] ?? false ) ) {
+            $spent_fmt     = $report_body['spent_fmt']     ?? $spent_fmt;
+            $budget_fmt    = $report_body['budget_fmt']    ?? $budget_fmt;
+            $remaining_fmt = $report_body['remaining_fmt'] ?? $remaining_fmt;
+            $show_warning  = $report_body['show_warning']  ?? $show_warning;
+            $contact_phone = $report_body['contact_phone'] ?? $contact_phone;
+            $contact_email = $report_body['contact_email'] ?? $contact_email;
+        }
+    }
 }
 
 // Step 6: Send done event
