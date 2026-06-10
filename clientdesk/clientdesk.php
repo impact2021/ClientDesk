@@ -1362,23 +1362,29 @@ final class ClientDesk {
     }
 
     private function package_url_is_reachable( string $url ): bool {
-        $response = wp_remote_head( $url, [
+        $http_args = [
             'timeout'     => 20,
             'redirection' => 5,
+        ];
+
+        $response = wp_remote_head( $url, [
+            'timeout'     => $http_args['timeout'],
+            'redirection' => $http_args['redirection'],
         ] );
 
         if ( ! is_wp_error( $response ) && $this->response_is_successful( $response ) ) {
             return true;
         }
 
+        // Retry with GET only when the server indicates HEAD is not supported.
         $head_fallback_status_codes = [ 405, 501 ];
         if ( ! is_wp_error( $response ) && ! in_array( (int) wp_remote_retrieve_response_code( $response ), $head_fallback_status_codes, true ) ) {
             return false;
         }
 
         $response = wp_remote_get( $url, [
-            'timeout'             => 20,
-            'redirection'         => 5,
+            'timeout'             => $http_args['timeout'],
+            'redirection'         => $http_args['redirection'],
             'limit_response_size' => 1024,
         ] );
 
