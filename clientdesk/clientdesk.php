@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ClientDesk
  * Description: Plain-English website editing, page management, and SEO tools — powered by Impact Websites.
- * Version: 2.9.24
+ * Version: 2.9.25
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -10,12 +10,11 @@
 
 require_once plugin_dir_path( __FILE__ ) . 'vendor/plugin-update-checker/load-v5p5.php';
 
-define( 'CLIENTDESK_VERSION', '2.9.24' );
-$clientdesk_zip_version = str_replace( '.', '_', CLIENTDESK_VERSION );
-$clientdesk_update_metadata_url = 'https://raw.githubusercontent.com/impact2021/ClientDesk/main/clientdesk-update.json';
+define( 'CLIENTDESK_VERSION', '2.9.25' );
+define( 'CLIENTDESK_UPDATE_METADATA_URL', 'https://raw.githubusercontent.com/impact2021/ClientDesk/main/clientdesk-update.json' );
 
 $clientdesk_update_checker = YahnisElsts\PluginUpdateChecker\v5p5\PucFactory::buildUpdateChecker(
-    $clientdesk_update_metadata_url,
+    CLIENTDESK_UPDATE_METADATA_URL,
     __FILE__,
     'clientdesk'
 );
@@ -1266,6 +1265,64 @@ final class ClientDesk {
         $latest = trim( $latest );
         $url    = trim( $url );
 
+        $candidates = [];
+        if ( '' !== $url ) {
+            $candidates[] = [
+                'latest' => $latest,
+                'url'    => $url,
+            ];
+        }
+
+        if ( '' !== $latest ) {
+            $derived_zip_url = $this->build_release_zip_url( $latest );
+            if ( '' !== $derived_zip_url ) {
+                $candidates[] = [
+                    'latest' => $latest,
+                    'url'    => $derived_zip_url,
+                ];
+            }
+        }
+
+        $candidates[] = [
+            'latest' => $latest,
+            'url'    => CLIENTDESK_UPDATE_METADATA_URL,
+        ];
+
+        $last_error = null;
+
+        foreach ( $candidates as $candidate ) {
+            $resolved = $this->resolve_update_package_candidate(
+                trim( (string) ( $candidate['latest'] ?? '' ) ),
+                trim( (string) ( $candidate['url'] ?? '' ) )
+            );
+
+            if ( ! is_wp_error( $resolved ) ) {
+                return $resolved;
+            }
+
+            $last_error = $resolved;
+        }
+
+        if ( $last_error instanceof WP_Error ) {
+            return $last_error;
+        }
+
+        return new WP_Error( 'cdc_update_missing_url', 'No update URL was provided.' );
+    }
+
+    private function build_release_zip_url( string $version ): string {
+        $version = trim( $version );
+        if ( '' === $version ) {
+            return '';
+        }
+
+        return sprintf(
+            'https://raw.githubusercontent.com/impact2021/ClientDesk/main/clientdesk-v%s.zip',
+            str_replace( '.', '_', $version )
+        );
+    }
+
+    private function resolve_update_package_candidate( string $latest, string $url ) {
         if ( '' === $url ) {
             return new WP_Error( 'cdc_update_missing_url', 'No update URL was provided.' );
         }
@@ -1274,6 +1331,11 @@ final class ClientDesk {
             $response = wp_remote_get( $url, [ 'timeout' => 20 ] );
             if ( is_wp_error( $response ) ) {
                 return new WP_Error( 'cdc_update_metadata_fetch_failed', $response->get_error_message() );
+            }
+
+            $response_code = (int) wp_remote_retrieve_response_code( $response );
+            if ( $response_code < 200 || $response_code >= 400 ) {
+                return new WP_Error( 'cdc_update_metadata_http_error', 'Update metadata could not be downloaded.' );
             }
 
             $metadata = json_decode( wp_remote_retrieve_body( $response ), true );
@@ -1289,10 +1351,41 @@ final class ClientDesk {
             }
         }
 
+        if ( ! wp_http_validate_url( $url ) ) {
+            return new WP_Error( 'cdc_update_invalid_package_url', 'The update package URL is invalid.' );
+        }
+
+        if ( ! $this->package_url_is_reachable( $url ) ) {
+            return new WP_Error( 'cdc_update_package_unreachable', 'The update package could not be downloaded.' );
+        }
+
         return [
             'latest' => $latest,
             'url'    => $url,
         ];
+    }
+
+    private function package_url_is_reachable( string $url ): bool {
+        $response = wp_remote_head( $url, [
+            'timeout'     => 20,
+            'redirection' => 5,
+        ] );
+
+        if ( is_wp_error( $response ) || ! $this->response_is_successful( $response ) ) {
+            $response = wp_remote_get( $url, [
+                'timeout'             => 20,
+                'redirection'         => 5,
+                'limit_response_size' => 1,
+            ] );
+        }
+
+        return ! is_wp_error( $response ) && $this->response_is_successful( $response );
+    }
+
+    private function response_is_successful( array $response ): bool {
+        $code = (int) wp_remote_retrieve_response_code( $response );
+
+        return $code >= 200 && $code < 400;
     }
 
     public function maybe_show_update_notice(): void {
@@ -1322,8 +1415,7 @@ final class ClientDesk {
         if ( $this->is_local_mode() ) return;
 
         $latest = trim( (string) get_transient( CDC_REMOTE_VERSION_TRANSIENT ) );
-        $url    = esc_url_raw( trim( (string) get_transient( CDC_REMOTE_ZIP_URL_TRANSIENT ) ) );
-        if ( $latest && $url && version_compare( $latest, CLIENTDESK_VERSION, '>' ) ) {
+        if ( $latest && version_compare( $latest, CLIENTDESK_VERSION, '>' ) ) {
             echo '<div class="notice notice-warning is-dismissible"><p>';
             echo 'A new ClientDesk version (' . esc_html( $latest ) . ') is available. ';
             echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="display:inline-block;margin-left:8px;">';
