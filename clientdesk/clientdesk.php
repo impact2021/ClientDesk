@@ -1367,10 +1367,7 @@ final class ClientDesk {
             'redirection' => 5,
         ];
 
-        $response = wp_remote_head( $url, [
-            'timeout'     => $http_args['timeout'],
-            'redirection' => $http_args['redirection'],
-        ] );
+        $response = wp_remote_head( $url, $http_args );
 
         if ( ! is_wp_error( $response ) && $this->response_is_successful( $response ) ) {
             return true;
@@ -1378,13 +1375,14 @@ final class ClientDesk {
 
         // Retry with GET only when the server indicates HEAD is not supported.
         $head_fallback_status_codes = [ 405, 501 ];
-        if ( ! is_wp_error( $response ) && ! in_array( (int) wp_remote_retrieve_response_code( $response ), $head_fallback_status_codes, true ) ) {
+        $should_try_get = is_wp_error( $response )
+            || in_array( (int) wp_remote_retrieve_response_code( $response ), $head_fallback_status_codes, true );
+
+        if ( ! $should_try_get ) {
             return false;
         }
 
-        $response = wp_remote_get( $url, [
-            'timeout'             => $http_args['timeout'],
-            'redirection'         => $http_args['redirection'],
+        $response = wp_remote_get( $url, $http_args + [
             'limit_response_size' => 1024,
         ] );
 
