@@ -2,7 +2,7 @@
 /**
  * Plugin Name: MasterDesk
  * Description: MasterDesk — Impact Websites central hub. Manages ClientDesk licences, usage tracking, and AI for all client sites.
- * Version: 2.4.5
+ * Version: 2.4.6
  * Tested up to: 6.8
  * Author: impact2021
  * License: GPL-2.0-or-later
@@ -10,10 +10,12 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'CDS_VERSION',   '2.4.5' );
+define( 'CDS_VERSION',   '2.4.6' );
 define( 'CDS_TOKEN_TABLE', 'clientdesk_tokens' );
 define( 'CDS_TABLE',     'clientdesk_sites' );
 define( 'CDS_LOG_TABLE', 'clientdesk_usage' );
+// Long enough to cover slow streamed edits and the follow-up usage report call.
+define( 'CDS_TOKEN_TTL', 1800 );
 
 // ---------------------------------------------------------------
 // Activation — create / update DB tables
@@ -582,16 +584,21 @@ function cds_handle_token( WP_REST_Request $request ): WP_REST_Response {
     }
 
     global $wpdb;
-    $wpdb->query( "DELETE FROM {$wpdb->prefix}" . CDS_TOKEN_TABLE . " WHERE expires_at < NOW() OR used = 1" );
+    $now_utc = cds_now_utc_mysql();
+    $token_table = $wpdb->prefix . CDS_TOKEN_TABLE;
+    $wpdb->query( $wpdb->prepare(
+        "DELETE FROM {$token_table} WHERE expires_at < %s OR used = 1",
+        $now_utc
+    ) );
 
     $token     = 'cdt_' . bin2hex( random_bytes( 24 ) );
     $model     = trim( (string) get_option( 'cds_model', 'claude-sonnet-4-6' ) );
     $api_key   = trim( (string) get_option( 'cds_anthropic_api_key', '' ) );
-    $expires   = gmdate( 'Y-m-d H:i:s', time() + 90 );
+    $expires   = gmdate( 'Y-m-d H:i:s', time() + CDS_TOKEN_TTL );
 
     if ( ! $api_key ) return cds_error( 'Anthropic API key not configured.' );
 
-    $wpdb->insert( $wpdb->prefix . CDS_TOKEN_TABLE, [
+    $inserted = $wpdb->insert( $token_table, [
         'token'      => $token,
         'site_id'    => $site->id,
         'domain'     => $calling,
@@ -599,6 +606,10 @@ function cds_handle_token( WP_REST_Request $request ): WP_REST_Response {
         'expires_at' => $expires,
         'used'       => 0,
     ] );
+    if ( false === $inserted ) {
+        cds_debug_log( 'Could not store session token for site ' . (int) $site->id . ': ' . $wpdb->last_error );
+        return cds_error( 'Could not create access token.' );
+    }
 
     $remaining_cents = max( 0, $budget_cents - $spent_cents );
     $warn_threshold  = (float) get_option( 'cds_warn_threshold', '2.00' );
@@ -612,7 +623,7 @@ function cds_handle_token( WP_REST_Request $request ): WP_REST_Response {
         'token'           => $token,
         'api_key'         => $api_key,
         'model'           => $model,
-        'expires_in'      => 90,
+        'expires_in'      => CDS_TOKEN_TTL,
         'spent_fmt'       => cds_format_dollars( $spent_cents ),
         'budget_fmt'      => cds_format_dollars( $budget_cents ),
         'remaining_fmt'   => cds_format_dollars( $remaining_cents ),
@@ -641,17 +652,44 @@ function cds_handle_report( WP_REST_Request $request ): WP_REST_Response {
     if ( ! $token ) return cds_error( 'No token provided.' );
 
     global $wpdb;
+    $now_utc = cds_now_utc_mysql();
+    $now_utc_ts = strtotime( $now_utc );
+    $token_table = $wpdb->prefix . CDS_TOKEN_TABLE;
     $row = $wpdb->get_row( $wpdb->prepare(
-        "SELECT * FROM {$wpdb->prefix}" . CDS_TOKEN_TABLE . " WHERE token = %s AND used = 0 AND expires_at >= NOW() LIMIT 1",
-        $token
+        "SELECT site_id, domain, used, expires_at FROM {$token_table} WHERE token = %s AND used = 0 AND expires_at >= %s LIMIT 1",
+        $token,
+        $now_utc
     ) );
 
-    if ( ! $row ) return cds_error( 'Token invalid, expired, or already used.' );
-
-    $wpdb->update( $wpdb->prefix . CDS_TOKEN_TABLE, [ 'used' => 1 ], [ 'token' => $token ] );
+    if ( ! $row ) {
+        $token_row = $wpdb->get_row( $wpdb->prepare(
+            "SELECT used, expires_at, site_id FROM {$token_table} WHERE token = %s LIMIT 1",
+            $token
+        ) );
+        if ( $token_row ) {
+            $reason = 'not eligible';
+            if ( (int) $token_row->used === 1 ) {
+                $reason = 'already used';
+            } elseif ( strtotime( (string) $token_row->expires_at ) < $now_utc_ts ) {
+                $reason = 'expired before report';
+            }
+            cds_debug_log( 'Usage report rejected for site ' . (int) $token_row->site_id . ' (' . $reason . ', expires_at=' . (string) $token_row->expires_at . ', now_utc=' . $now_utc . ')' );
+        } else {
+            cds_debug_log( 'Usage report rejected for unknown token at ' . $now_utc );
+        }
+        return cds_error( 'Token invalid, expired, or already used.' );
+    }
 
     $cost_cents = cds_calculate_cost_cents( $input_tokens, $output_tokens );
-    cds_log_usage( (int) $row->site_id, $row->domain, $action ?: 'chat', $summary ?: '', $input_tokens, $output_tokens, $cost_cents );
+    if ( ! cds_log_usage( (int) $row->site_id, $row->domain, $action ?: 'chat', $summary ?: '', $input_tokens, $output_tokens, $cost_cents ) ) {
+        return cds_error( 'Could not record usage.' );
+    }
+
+    $updated = $wpdb->update( $token_table, [ 'used' => 1 ], [ 'token' => $token ] );
+    if ( false === $updated ) {
+        cds_debug_log( 'Could not mark session token as used for site ' . (int) $row->site_id . ': ' . $wpdb->last_error );
+        return cds_error( 'Could not finalise usage report.' );
+    }
 
     $site = $wpdb->get_row( $wpdb->prepare(
         "SELECT * FROM {$wpdb->prefix}" . CDS_TABLE . " WHERE id = %d LIMIT 1",
@@ -832,7 +870,7 @@ function cds_monthly_spent_cents( int $site_id ): int {
 function cds_monthly_usage_summary( int $site_id ): array {
     global $wpdb;
     $table = $wpdb->prefix . CDS_LOG_TABLE;
-    $start = gmdate( 'Y-m-01 00:00:00' );
+    $start = cds_month_start_utc_mysql();
     $row   = $wpdb->get_row( $wpdb->prepare(
         "SELECT COALESCE(SUM(cost_cents),0) AS cost_cents,
                 COALESCE(SUM(input_tokens),0) AS input_tokens,
@@ -860,7 +898,7 @@ function cds_monthly_usage_summary_map( array $site_ids ): array {
     }
 
     $table        = $wpdb->prefix . CDS_LOG_TABLE;
-    $start        = gmdate( 'Y-m-01 00:00:00' );
+    $start        = cds_month_start_utc_mysql();
     $placeholders = implode( ',', array_fill( 0, count( $site_ids ), '%d' ) );
     $query        = $wpdb->prepare(
         "SELECT site_id,
@@ -888,9 +926,9 @@ function cds_monthly_usage_summary_map( array $site_ids ): array {
     return $summary_map;
 }
 
-function cds_log_usage( int $site_id, string $domain, string $action, string $summary, int $input_tokens, int $output_tokens, int $cost_cents ): void {
+function cds_log_usage( int $site_id, string $domain, string $action, string $summary, int $input_tokens, int $output_tokens, int $cost_cents ) {
     global $wpdb;
-    $wpdb->insert( $wpdb->prefix . CDS_LOG_TABLE, [
+    $inserted = $wpdb->insert( $wpdb->prefix . CDS_LOG_TABLE, [
         'site_id'       => $site_id,
         'domain'        => $domain,
         'action'        => $action,
@@ -898,7 +936,25 @@ function cds_log_usage( int $site_id, string $domain, string $action, string $su
         'input_tokens'  => $input_tokens,
         'output_tokens' => $output_tokens,
         'cost_cents'    => $cost_cents,
+        'used_at'       => cds_now_utc_mysql(),
     ] );
+    if ( false === $inserted ) {
+        cds_debug_log( 'Could not insert usage row for site ' . $site_id . ': ' . $wpdb->last_error );
+        return false;
+    }
+    return true;
+}
+
+function cds_now_utc_mysql(): string {
+    return gmdate( 'Y-m-d H:i:s' );
+}
+
+function cds_month_start_utc_mysql(): string {
+    return gmdate( 'Y-m-01 00:00:00' );
+}
+
+function cds_debug_log( string $message ): void {
+    error_log( '[MasterDesk] ' . $message );
 }
 
 function cds_generate_key(): string {

@@ -39,6 +39,9 @@ if ( ! $wp_load ) {
 }
 require_once $wp_load;
 
+// Keep error payloads short in the client debug log.
+if ( ! defined( 'CDC_REPORT_LOG_LIMIT' ) ) define( 'CDC_REPORT_LOG_LIMIT', 300 );
+
 function cdc_slog( $msg ) {
     if ( ! get_option( 'cdc_debug_mode' ) ) return;
     $log = dirname( __FILE__ ) . '/cdc-debug.log';
@@ -886,14 +889,21 @@ if ( $session_token !== '' && $endpoint !== '' ) {
             'summary'       => $report_summary,
         ] ),
         CURLOPT_HTTPHEADER     => [ 'Content-Type: application/json' ],
-        CURLOPT_TIMEOUT        => 5,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        // Give the post-stream usage write a little more headroom than the old 5-second limit.
+        CURLOPT_TIMEOUT        => 15,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_NOSIGNAL       => true,
     ] );
     $report_raw = curl_exec( $report_ch );
+    $report_errno = curl_errno( $report_ch );
+    $report_error = curl_error( $report_ch );
+    $report_code  = (int) curl_getinfo( $report_ch, CURLINFO_RESPONSE_CODE );
     curl_close( $report_ch );
     // Update display values with post-usage figures returned by the report endpoint
-    if ( $report_raw ) {
+    if ( false === $report_raw ) {
+        cdc_slog( 'Usage report cURL error ' . $report_errno . ': ' . $report_error );
+    } elseif ( $report_raw ) {
         $report_body = json_decode( $report_raw, true );
         if ( is_array( $report_body ) && ( $report_body['success'] ?? false ) ) {
             $spent_fmt     = $report_body['spent_fmt']     ?? $spent_fmt;
@@ -902,7 +912,16 @@ if ( $session_token !== '' && $endpoint !== '' ) {
             $show_warning  = $report_body['show_warning']  ?? $show_warning;
             $contact_phone = $report_body['contact_phone'] ?? $contact_phone;
             $contact_email = $report_body['contact_email'] ?? $contact_email;
+        } elseif ( is_array( $report_body ) ) {
+            cdc_slog( 'Usage report rejected (HTTP ' . $report_code . '): ' . ( $report_body['error'] ?? 'Unknown report error' ) );
+        } else {
+            $report_preview = function_exists( 'mb_substr' )
+                ? mb_substr( $report_raw, 0, CDC_REPORT_LOG_LIMIT, 'UTF-8' )
+                : substr( $report_raw, 0, CDC_REPORT_LOG_LIMIT );
+            cdc_slog( 'Usage report returned invalid JSON (HTTP ' . $report_code . '): ' . $report_preview );
         }
+    } else {
+        cdc_slog( 'Usage report returned an empty response (HTTP ' . $report_code . ')' );
     }
 }
 
