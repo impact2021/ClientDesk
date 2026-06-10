@@ -1288,7 +1288,7 @@ final class ClientDesk {
             'url'    => CLIENTDESK_UPDATE_METADATA_URL,
         ];
 
-        $last_error = null;
+        $last_error = new WP_Error( 'cdc_update_missing_url', 'No update URL was provided.' );
 
         foreach ( $candidates as $candidate ) {
             $resolved = $this->resolve_update_package_candidate(
@@ -1303,11 +1303,7 @@ final class ClientDesk {
             $last_error = $resolved;
         }
 
-        if ( $last_error instanceof WP_Error ) {
-            return $last_error;
-        }
-
-        return new WP_Error( 'cdc_update_missing_url', 'No update URL was provided.' );
+        return $last_error;
     }
 
     private function build_release_zip_url( string $version ): string {
@@ -1375,8 +1371,8 @@ final class ClientDesk {
             return true;
         }
 
-        $head_code = is_wp_error( $response ) ? 0 : (int) wp_remote_retrieve_response_code( $response );
-        if ( ! is_wp_error( $response ) && ! in_array( $head_code, [ 405, 501 ], true ) ) {
+        $head_fallback_status_codes = [ 405, 501 ];
+        if ( ! is_wp_error( $response ) && ! in_array( (int) wp_remote_retrieve_response_code( $response ), $head_fallback_status_codes, true ) ) {
             return false;
         }
 
