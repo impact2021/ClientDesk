@@ -1284,7 +1284,7 @@ final class ClientDesk {
         }
 
         $candidates[] = [
-            'latest' => $latest,
+            'latest' => '',
             'url'    => CLIENTDESK_UPDATE_METADATA_URL,
         ];
 
@@ -1371,13 +1371,20 @@ final class ClientDesk {
             'redirection' => 5,
         ] );
 
-        if ( is_wp_error( $response ) || ! $this->response_is_successful( $response ) ) {
-            $response = wp_remote_get( $url, [
-                'timeout'             => 20,
-                'redirection'         => 5,
-                'limit_response_size' => 1024,
-            ] );
+        if ( ! is_wp_error( $response ) && $this->response_is_successful( $response ) ) {
+            return true;
         }
+
+        $head_code = is_wp_error( $response ) ? 0 : (int) wp_remote_retrieve_response_code( $response );
+        if ( ! is_wp_error( $response ) && ! in_array( $head_code, [ 405, 501 ], true ) ) {
+            return false;
+        }
+
+        $response = wp_remote_get( $url, [
+            'timeout'             => 20,
+            'redirection'         => 5,
+            'limit_response_size' => 1024,
+        ] );
 
         return ! is_wp_error( $response ) && $this->response_is_successful( $response );
     }
