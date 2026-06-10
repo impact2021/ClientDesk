@@ -1292,8 +1292,8 @@ final class ClientDesk {
 
         foreach ( $candidates as $candidate ) {
             $resolved = $this->resolve_update_package_candidate(
-                trim( (string) ( $candidate['latest'] ?? '' ) ),
-                trim( (string) ( $candidate['url'] ?? '' ) )
+                trim( $candidate['latest'] ?? '' ),
+                trim( $candidate['url'] ?? '' )
             );
 
             if ( ! is_wp_error( $resolved ) ) {
@@ -1375,7 +1375,7 @@ final class ClientDesk {
             $response = wp_remote_get( $url, [
                 'timeout'             => 20,
                 'redirection'         => 5,
-                'limit_response_size' => 1,
+                'limit_response_size' => 1024,
             ] );
         }
 
