@@ -1415,7 +1415,8 @@ final class ClientDesk {
         if ( $this->is_local_mode() ) return;
 
         $latest = trim( (string) get_transient( CDC_REMOTE_VERSION_TRANSIENT ) );
-        if ( $latest && version_compare( $latest, CLIENTDESK_VERSION, '>' ) ) {
+        $url    = esc_url_raw( trim( (string) get_transient( CDC_REMOTE_ZIP_URL_TRANSIENT ) ) );
+        if ( $latest && $url && version_compare( $latest, CLIENTDESK_VERSION, '>' ) ) {
             echo '<div class="notice notice-warning is-dismissible"><p>';
             echo 'A new ClientDesk version (' . esc_html( $latest ) . ') is available. ';
             echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="display:inline-block;margin-left:8px;">';
