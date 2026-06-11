@@ -50,9 +50,8 @@ function cdc_slog( $msg ) {
 cdc_slog( 'stream.php loaded — POST page_id=' . ( $_POST['page_id'] ?? 'unset' ) );
 
 // Auth
-$nonce   = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
-$user_id = wp_verify_nonce( $nonce, 'cdc_nonce' );
-if ( ! $user_id || ! user_can( (int) $user_id, 'edit_pages' ) ) {
+$nonce = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
+if ( ! wp_verify_nonce( $nonce, 'cdc_nonce' ) || ! current_user_can( 'edit_pages' ) ) {
     header( 'Content-Type: text/event-stream' );
     header( 'Cache-Control: no-cache' );
     echo "event: error\ndata: {\"message\":\"Permission denied.\"}\n\n";
